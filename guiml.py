@@ -48,14 +48,6 @@ def estimate_risk(entropy, output):
         score += 30
     return min(100, score)
 
-def get_verdict(score):
-    if score > 75:
-        return "Malicious"
-    elif score > 40:
-        return "Suspicious"
-    else:
-        return "Clean"
-
 # -------------------- Report Generator --------------------
 def generate_report(file_path, output):
     file_name = os.path.basename(file_path)
@@ -65,32 +57,39 @@ def generate_report(file_path, output):
     file_size = round(os.path.getsize(file_path) / 1024, 2)
     entropy = calculate_entropy(file_path)
     risk_score = estimate_risk(entropy, output)
-    verdict = get_verdict(risk_score)
     timestamp = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
 
     with open(report_path, "w") as f:
-        f.write("====== Black Swan Antivirus Scan Report ======\n")
-        f.write(f"Generated On   : {timestamp}\n")
-        f.write(f"File Name      : {file_name}\n")
-        f.write(f"File Path      : {file_path}\n")
-        f.write(f"File Size      : {file_size} KB\n")
-        f.write(f"Shannon Entropy: {entropy} bits/byte\n")
-        f.write(f"Heuristic Score: {risk_score}/100\n")
-        f.write(f"Final Verdict  : {verdict}\n")
-        f.write("\n----------- Scan Output -----------\n")
+        f.write("============ Black Swan Antivirus Report ============\n")
+        f.write(f"Generated On        : {timestamp}\n")
+        f.write(f"File Name           : {file_name}\n")
+        f.write(f"File Path           : {file_path}\n")
+        f.write(f"File Size           : {file_size} KB\n")
+        f.write(f"Shannon Entropy     : {entropy} bits/byte\n")
+        f.write(f"Heuristic Risk Score: {risk_score}/100\n")
+        if risk_score >= 60:
+            f.write("!! IMMEDIATE ACTION REQUIRED !!\n")
+        f.write("\n--------------- Engine Output ---------------\n")
         f.write(output + "\n")
-        f.write("\n----------- Analysis & Recommendation -----------\n")
-        if verdict == "Malicious":
-            f.write("- The file contains multiple indicators of malicious behavior.\n")
-            f.write("- Quarantine and submit for deeper analysis.\n")
-            f.write("- Avoid execution on any system.\n")
-        elif verdict == "Suspicious":
-            f.write("- Indicators suggest potential threat.\n")
-            f.write("- Proceed only after manual inspection.\n")
-            f.write("- Use sandboxing if necessary.\n")
+
+        f.write("\n----------- Observations -----------\n")
+        if entropy > 7.0:
+            f.write("- High entropy suggests possible obfuscation or packed binary.\n")
+        if "suspicious" in output.lower():
+            f.write("- Engine flagged suspicious patterns.\n")
+        if "malware" in output.lower() or "payload" in output.lower():
+            f.write("- Potential malicious indicators detected.\n")
+        if risk_score < 60:
+            f.write("- No strong indicators found. Manual inspection recommended.\n")
+
+        f.write("\n----------- Recommendation -----------\n")
+        if risk_score >= 60:
+            f.write("- Do not execute the file.\n")
+            f.write("- Isolate the file and investigate further.\n")
+            f.write("- Consider scanning with multiple tools or sandboxing.\n")
         else:
-            f.write("- File appears clean based on entropy and heuristic string matches.\n")
-            f.write("- No immediate action required.\n")
+            f.write("- No immediate red flags. Continue monitoring behavior if executed.\n")
+
     return report_path
 
 # -------------------- UI Logic --------------------
