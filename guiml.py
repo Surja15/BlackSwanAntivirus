@@ -2,22 +2,25 @@ from tkinter import *
 from tkinter import filedialog
 import subprocess
 import tkinter.font as tkfont
-from datetime import datetime
-from fpdf import FPDF
-import os
 import ttkbootstrap as tb
+import math
+import pefile
+import os
 
 root = tb.Window(themename="darkly")
+
 root.title("BlackSwanAV")
 root.geometry("1440x900")
 
-# Global font
+# Set global default font to DejaVu Sans Mono, size 14 (adjust size if needed)
 default_font = tkfont.nametofont("TkDefaultFont")
 default_font.configure(family="DejaVu Sans Mono", size=14)
+
+# Also update TkText font default (since Text widget doesn't inherit TkDefaultFont)
 text_font = tkfont.Font(family="DejaVu Sans Mono", size=14)
 
 file_path = ""
-upload_type = "file"
+upload_type = "file"  # Default upload type is file
 
 def file_dialog():
     global file_path
@@ -25,64 +28,33 @@ def file_dialog():
         file_path = filedialog.askopenfilename()
     else:
         file_path = filedialog.askdirectory()
-    file_label.config(text="Chosen path: " + file_path if file_path else "No path selected")
+    if file_path:
+        file_label.config(text="Chosen path: " + file_path)
+    else:
+        file_label.config(text="No path selected")
+
+def execute_engine(file_path):
+    if file_path:
+        file_label.config(text=file_path)
+        result = subprocess.run(["/home/surja/Downloads/Black-Swan-main/engine", file_path], stdout=subprocess.PIPE)
+        output_text.delete(1.0, END)
+        output_text.insert(END, result.stdout.decode())
+        output_text.see(END)
+    else:
+        file_label.config(text="No path selected")
 
 def toggle_upload_type():
     global upload_type
-    upload_type = "directory" if upload_type == "file" else "file"
-    toggle_button.config(text="Switch to File Upload" if upload_type == "directory" else "Switch to Directory Upload")
-
-def generate_pdf_report(matched_rules, file_path):
-    now = datetime.now().strftime("%Y-%m-%d_%H-%M-%S")
-    filename = f"report_{now}.pdf"
-    pdf = FPDF()
-    pdf.add_page()
-    pdf.set_font("Arial", size=14)
-    pdf.rect(10, 10, 190, 277)  # border
-    pdf.cell(0, 10, "BlackSwanAV Threat Report", ln=True, align='C')
-    pdf.ln(10)
-    pdf.cell(0, 10, f"Scanned Path: {file_path}", ln=True)
-    pdf.ln(10)
-    pdf.set_font("Arial", 'B', 12)
-    pdf.cell(0, 10, "Matched YARA Rules:", ln=True)
-    pdf.set_font("Arial", size=12)
-    if matched_rules:
-        for rule in matched_rules:
-            pdf.cell(0, 10, f"- {rule}", ln=True)
+    if upload_type == "file":
+        upload_type = "directory"
+        toggle_button.config(text="Switch to File Upload")
     else:
-        pdf.cell(0, 10, "No rules matched.", ln=True)
-    report_dir = os.path.expanduser("~/Desktop/BlackSwanReports")
-    os.makedirs(report_dir, exist_ok=True)
-    report_path = os.path.join(report_dir, filename)
-    pdf.output(report_path)
-    return report_path
+        upload_type = "file"
+        toggle_button.config(text="Switch to Directory Upload")
 
-def execute_engine(file_path):
-    if not file_path:
-        file_label.config(text="No path selected")
-        return
-    try:
-        result = subprocess.run(
-            ["/home/surja/Downloads/Black-Swan-main/engine", file_path],
-            capture_output=True, text=True, check=True
-        )
-        output = result.stdout
-        matched_rules = [line.split("Matched rule:")[-1].strip() for line in output.splitlines() if "Matched rule:" in line]
-
-        output_text.delete(1.0, END)
-        output_text.insert(END, output)
-        output_text.insert(END, f"\n\n✅ Scan complete.")
-        if matched_rules:
-            output_text.insert(END, f"\nMatched Rules:\n" + "\n".join(matched_rules))
-        report_path = generate_pdf_report(matched_rules, file_path)
-        output_text.insert(END, f"\n\n📄 Report saved to: {report_path}")
-
-    except subprocess.CalledProcessError as e:
-        output_text.delete(1.0, END)
-        output_text.insert(END, f"Error during scan:\n{e.stderr}")
-
-# GUI Layout
-tb.Label(text="Black Swan Antivirus", font=("DejaVu Sans Mono", 40, "bold"), bootstyle="default").pack(pady=10)
+# Top heading with bigger font size explicitly
+my_label = tb.Label(text="Black Swan Antivirus", font=("DejaVu Sans Mono", 40, "bold"), bootstyle="default")
+my_label.pack(pady=10)
 
 toggle_button = tb.Button(text="Switch to Directory Upload", bootstyle="secondary", command=toggle_upload_type)
 toggle_button.pack(pady=10)
@@ -99,9 +71,94 @@ my_button = tb.Button(text="Upload", bootstyle="primary, outline", command=lambd
 my_button.config(padding="40 15")
 my_button.pack(pady=20)
 
-tb.Label(text="Scan results", font=("DejaVu Sans Mono", 30, "bold"), bootstyle="default").pack(pady=20)
+my_label2 = tb.Label(text="Scan results", font=("DejaVu Sans Mono", 30, "bold"), bootstyle="default")
+my_label2.pack(pady=20)
 
 output_text = Text(root, width=200, height=30, wrap='word', font=text_font)
 output_text.pack(pady=10)
+def calculate_entropy(data):
+    if not data:
+        return 0.0
+    entropy = 0
+    byte_counts = [0] * 256
+    for byte in data:
+        byte_counts[byte] += 1
+    for count in byte_counts:
+        if count:
+            p_x = count / len(data)
+            entropy -= p_x * math.log2(p_x)
+    return round(entropy, 2)
+
+def analyze_file_features(path):
+    if not os.path.isfile(path):
+        return "Invalid file path."
+
+    try:
+        # Load raw data
+        with open(path, "rb") as f:
+            raw_data = f.read()
+        file_entropy = calculate_entropy(raw_data)
+
+        # Parse PE file
+        pe = pefile.PE(path)
+        num_sections = len(pe.sections)
+        suspicious_sections = []
+        section_entropies = []
+
+        for section in pe.sections:
+            name = section.Name.decode(errors="ignore").strip('\x00')
+            entropy = round(section.get_entropy(), 2)
+            section_entropies.append(entropy)
+            if entropy > 6.8:
+                suspicious_sections.append((name, entropy))
+
+        # Analyze imports
+        imports = []
+        try:
+            for entry in pe.DIRECTORY_ENTRY_IMPORT:
+                for imp in entry.imports:
+                    if imp.name:
+                        imports.append(imp.name.decode(errors="ignore"))
+        except AttributeError:
+            imports = []
+
+        suspicious_apis = ["VirtualAlloc", "WriteProcessMemory", "CreateRemoteThread", "LoadLibraryA", "GetProcAddress"]
+        flagged_apis = [api for api in suspicious_apis if any(api in i for i in imports)]
+
+        # Risk Scoring (very basic heuristic)
+        risk_score = 0
+        if file_entropy > 6.5:
+            risk_score += 20
+        risk_score += len(suspicious_sections) * 5
+        risk_score += len(flagged_apis) * 10
+
+        # Format output
+        output = "\n=== Static Analysis Report ===\n"
+        output += f"Overall File Entropy: {file_entropy}\n"
+        output += f"Number of Sections: {num_sections}\n"
+        output += "Suspicious Sections:\n"
+        for name, ent in suspicious_sections:
+            output += f"  - {name}: Entropy={ent}\n"
+        output += f"Flagged Suspicious APIs: {flagged_apis or 'None'}\n"
+        output += f"Risk Score (0-100): {risk_score}\n"
+        return output
+
+    except Exception as e:
+        return f"Error in analysis: {e}"
+
+# Hook it to run after engine output
+def execute_engine(file_path):
+    if file_path:
+        file_label.config(text=file_path)
+        result = subprocess.run(["/home/surja/Downloads/Black-Swan-main/engine", file_path], stdout=subprocess.PIPE)
+        output_text.delete(1.0, END)
+        output_text.insert(END, result.stdout.decode())
+
+        # Append static analysis report
+        static_report = analyze_file_features(file_path)
+        output_text.insert(END, "\n" + static_report)
+        output_text.see(END)
+    else:
+        file_label.config(text="No path selected")
 
 root.mainloop()
