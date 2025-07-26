@@ -19,23 +19,24 @@ file_path = ""
 upload_type = "file"  # Default is file
 
 # -------------------- Entropy Function --------------------
-def calculate_entropy(file_path):
-    if not os.path.isfile(file_path):
-        return 0.0
-    with open(file_path, "rb") as f:
-        byte_arr = list(f.read())
-    if not byte_arr:
-        return 0.0
-    freq_list = [0] * 256
-    for byte in byte_arr:
-        freq_list[byte] += 1
-    entropy = 0.0
-    file_size = len(byte_arr)
-    for freq in freq_list:
-        if freq > 0:
-            p = freq / file_size
+def calculate_entropy(filepath):
+    try:
+        with open(filepath, 'rb') as f:
+            data = f.read()
+        if not data:
+            return 0
+        byte_counts = [0] * 256
+        for b in data:
+            byte_counts[b] += 1
+        entropy = 0
+        for count in byte_counts:
+            if count == 0:
+                continue
+            p = count / len(data)
             entropy -= p * math.log2(p)
-    return round(entropy, 3)
+        return round(entropy, 2)
+    except:
+        return 0
 
 # -------------------- Risk Heuristic --------------------
 def estimate_risk(entropy, output):
@@ -49,48 +50,85 @@ def estimate_risk(entropy, output):
     return min(100, score)
 
 # -------------------- Report Generator --------------------
-def generate_report(file_path, output):
-    file_name = os.path.basename(file_path)
-    dir_name = os.path.dirname(file_path)
-    report_path = os.path.join(dir_name, f"report_{file_name}.txt")
-
-    file_size = round(os.path.getsize(file_path) / 1024, 2)
+def generate_report(file_path, yara_output):
     entropy = calculate_entropy(file_path)
-    risk_score = estimate_risk(entropy, output)
-    timestamp = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
+    keyword_weights = {
+        "malware": 15,
+        "trojan": 20,
+        "ransom": 20,
+        "shellcode": 20,
+        "payload": 15,
+        "exploit": 15,
+        "backdoor": 20,
+        "obfuscation": 10,
+        "packer": 10,
+        "suspicious": 10,
+        "encoded": 10
+    }
 
-    with open(report_path, "w") as f:
-        f.write("============ Black Swan Antivirus Report ============\n")
-        f.write(f"Generated On        : {timestamp}\n")
-        f.write(f"File Name           : {file_name}\n")
-        f.write(f"File Path           : {file_path}\n")
-        f.write(f"File Size           : {file_size} KB\n")
-        f.write(f"Shannon Entropy     : {entropy} bits/byte\n")
-        f.write(f"Heuristic Risk Score: {risk_score}/100\n")
-        if risk_score >= 60:
-            f.write("!! IMMEDIATE ACTION REQUIRED !!\n")
-        f.write("\n--------------- Engine Output ---------------\n")
-        f.write(output + "\n")
+    matched_rules = set()
+    score = 0
 
-        f.write("\n----------- Observations -----------\n")
-        if entropy > 7.0:
-            f.write("- High entropy suggests possible obfuscation or packed binary.\n")
-        if "suspicious" in output.lower():
-            f.write("- Engine flagged suspicious patterns.\n")
-        if "malware" in output.lower() or "payload" in output.lower():
-            f.write("- Potential malicious indicators detected.\n")
-        if risk_score < 60:
-            f.write("- No strong indicators found. Manual inspection recommended.\n")
+    for line in yara_output.splitlines():
+        if line.strip():
+            rule_name = line.split()[0]
+            matched_rules.add(rule_name)
 
-        f.write("\n----------- Recommendation -----------\n")
-        if risk_score >= 60:
-            f.write("- Do not execute the file.\n")
-            f.write("- Isolate the file and investigate further.\n")
-            f.write("- Consider scanning with multiple tools or sandboxing.\n")
-        else:
-            f.write("- No immediate red flags. Continue monitoring behavior if executed.\n")
+        line_lower = line.lower()
+        for keyword, weight in keyword_weights.items():
+            if keyword in line_lower:
+                score += weight
 
-    return report_path
+    # Add 1 point for each rule matched (base boost)
+    score += len(matched_rules)
+
+    # Entropy influence
+    if entropy > 7.5:
+        score += 20
+    elif entropy > 6.5:
+        score += 10
+
+    # Cap score at 100
+    score = min(score, 100)
+
+    # Risk Category
+    if score >= 85:
+        verdict = "High Risk"
+    elif score >= 60:
+        verdict = "Suspicious"
+    else:
+        verdict = "Low Risk / Clean"
+
+    # Recommendation only for extreme cases
+    if score >= 85 or len(matched_rules) >= 20:
+        recommendation = "\nRecommendation: Immediate quarantine and further analysis recommended."
+    else:
+        recommendation = ""
+
+    # Format the report
+    report_content = f"""
+======= BlackSwanAV Scan Report =======
+
+File Scanned: {file_path}
+Number of Rules Matched: {len(matched_rules)}
+Entropy: {entropy}
+Risk Score: {score}/100
+Verdict: {verdict}
+{recommendation}
+
+Matched Rules:
+{chr(10).join(matched_rules)}
+
+Raw YARA Output:
+{yara_output}
+
+=======================================
+"""
+    report_file = file_path + "_scan_report.txt"
+    with open(report_file, "w") as f:
+        f.write(report_content)
+
+    return report_file
 
 # -------------------- UI Logic --------------------
 def file_dialog():
