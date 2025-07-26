@@ -67,8 +67,14 @@ def execute_engine(file_path):
 
         # Risk score based on rule count
         rule_count = len(rule_hits)
-        risk_score = min(rule_count * 10, 100)
+        # Entropy-based risk component: normalized to 0–40 scale
+entropy_component = min(max((entropy_score - 6.5) * 10, 0), 40)  # Entropy >6.5 is considered more suspicious
 
+# Rule-based risk component: normalized to 0–60 scale
+rule_component = min(rule_count * 10, 60)  # 6 or more rules = max 60
+
+# Final risk score out of 100
+risk_score = int(entropy_component + rule_component)
         # Generate PDF
         generate_pdf_report(file_path, rule_hits, entropy_score, risk_score)
 
