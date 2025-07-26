@@ -1,28 +1,25 @@
 from tkinter import *
-from tkinter import filedialog
+from tkinter import filedialog, messagebox
 import subprocess
 import tkinter.font as tkfont
 import ttkbootstrap as tb
 import math
-import pefile
 import os
 from fpdf import FPDF
 import datetime
 
+# Initialize GUI
 root = tb.Window(themename="darkly")
-
 root.title("BlackSwanAV")
 root.geometry("1440x900")
 
-# Set global default font to DejaVu Sans Mono, size 14 (adjust size if needed)
+# Set formal monospace font
 default_font = tkfont.nametofont("TkDefaultFont")
-default_font.configure(family="DejaVu Sans Mono", size=14)
-
-# Also update TkText font default (since Text widget doesn't inherit TkDefaultFont)
-text_font = tkfont.Font(family="DejaVu Sans Mono", size=14)
+default_font.configure(family="Courier New", size=13)
+text_font = tkfont.Font(family="Courier New", size=13)
 
 file_path = ""
-upload_type = "file"  # Default upload type is file
+upload_type = "file"
 
 def file_dialog():
     global file_path
@@ -30,75 +27,59 @@ def file_dialog():
         file_path = filedialog.askopenfilename()
     else:
         file_path = filedialog.askdirectory()
-    if file_path:
-        file_label.config(text="Chosen path: " + file_path)
-    else:
-        file_label.config(text="No path selected")
+    file_label.config(text="Chosen path: " + file_path if file_path else "No path selected")
 
 def execute_engine(file_path):
-    if file_path:
-        file_label.config(text=file_path)
-        result = subprocess.run(
-            ["/home/surja/Downloads/Black-Swan-main/engine", file_path],
-            stdout=subprocess.PIPE
-        )
-        output = result.stdout.decode()
-        output_text.delete(1.0, END)
-        output_text.insert(END, output)
-        output_text.see(END)
-
-        # Extract rule names from output
-        rule_hits = []
-        for line in output.splitlines():
-            if "Rule matched:" in line:
-                rule_hits.append(line.replace("Rule matched:", "").strip())
-
-        # Calculate entropy
-        entropy_score = 0
-        try:
-            with open(file_path, 'rb') as f:
-                data = f.read()
-                if data:
-                    import math
-                    freq = [float(data.count(byte)) / len(data) for byte in range(256)]
-                    entropy_score = -sum([f * math.log2(f) for f in freq if f > 0])
-        except Exception as e:
-            entropy_score = 0
-
-        # Risk score based on rule count
-        rule_count = len(rule_hits)
-        # Entropy-based risk component: normalized to 0–40 scale
-        entropy_component = min(max((entropy_score - 6.5) * 10, 0), 40)  # Entropy >6.5 is considered more suspicious
-
-# Rule-based risk component: normalized to 0–60 scale
-        rule_component = min(rule_count * 10, 60)  # 6 or more rules = max 60
-
-# Final risk score out of 100
-        risk_score = int(entropy_component + rule_component)
-        # Generate PDF
-        generate_pdf_report(file_path, rule_hits, entropy_score, risk_score)
-
-    else:
+    if not file_path:
         file_label.config(text="No path selected")
+        return
 
+    file_label.config(text=file_path)
+    result = subprocess.run(
+        ["/home/surja/Downloads/Black-Swan-main/engine", file_path],
+        stdout=subprocess.PIPE
+    )
+    output = result.stdout.decode()
+    output_text.delete(1.0, END)
+    output_text.insert(END, output)
+    output_text.see(END)
+
+    rule_hits = []
+    for line in output.splitlines():
+        if "Rule matched:" in line:
+            rule_hits.append(line.split("Rule matched:")[1].strip())
+
+    entropy_score = 0
+    try:
+        with open(file_path, 'rb') as f:
+            data = f.read()
+            freq = [float(data.count(byte)) / len(data) for byte in range(256)]
+            entropy_score = -sum([f * math.log2(f) for f in freq if f > 0])
+    except:
+        entropy_score = 0
+
+    rule_count = len(rule_hits)
+    entropy_component = min(max((entropy_score - 6.5) * 10, 0), 40)
+    rule_component = min(rule_count * 10, 60)
+    risk_score = int(entropy_component + rule_component)
+
+    pdf_path = generate_pdf_report(file_path, rule_hits, entropy_score, risk_score)
+
+    # Show success message with path
+    messagebox.showinfo("Scan Finished", f"Report successfully generated at:\n{pdf_path}")
 
 def toggle_upload_type():
     global upload_type
-    if upload_type == "file":
-        upload_type = "directory"
-        toggle_button.config(text="Switch to File Upload")
-    else:
-        upload_type = "file"
-        toggle_button.config(text="Switch to Directory Upload")
+    upload_type = "directory" if upload_type == "file" else "file"
+    toggle_button.config(text="Switch to File Upload" if upload_type == "directory" else "Switch to Directory Upload")
 
-# Top heading with bigger font size explicitly
-my_label = tb.Label(text="Black Swan Antivirus", font=("DejaVu Sans Mono", 40, "bold"), bootstyle="default")
-my_label.pack(pady=10)
+# --- GUI Widgets ---
+tb.Label(text="Black Swan Antivirus", font=("Courier New", 36, "bold"), bootstyle="default").pack(pady=10)
 
 toggle_button = tb.Button(text="Switch to Directory Upload", bootstyle="secondary", command=toggle_upload_type)
 toggle_button.pack(pady=10)
 
-file_label = tb.Label(text="", font=("DejaVu Sans Mono", 12), bootstyle="default")
+file_label = tb.Label(text="No file selected", font=("Courier New", 12), bootstyle="default")
 file_label.pack(pady=10)
 
 image = PhotoImage(file="images/upload_image.png")
@@ -106,60 +87,73 @@ image_button = tb.Label(image=image)
 image_button.pack(pady=10)
 image_button.bind("<Button-1>", lambda event: file_dialog())
 
-my_button = tb.Button(text="Upload", bootstyle="primary, outline", command=lambda: execute_engine(file_path))
-my_button.config(padding="40 15")
-my_button.pack(pady=20)
+tb.Button(text="Upload & Scan", bootstyle="primary outline", command=lambda: execute_engine(file_path), padding="40 15").pack(pady=20)
 
-my_label2 = tb.Label(text="Scan results", font=("DejaVu Sans Mono", 30, "bold"), bootstyle="default")
-my_label2.pack(pady=20)
+tb.Label(text="Scan Results", font=("Courier New", 28, "bold"), bootstyle="default").pack(pady=20)
 
-output_text = Text(root, width=200, height=30, wrap='word', font=text_font)
+output_text = Text(root, width=160, height=30, wrap='word', font=text_font)
 output_text.pack(pady=10)
+
+# --- PDF Report Generator ---
 def generate_pdf_report(filepath, rule_hits, entropy_score, risk_score):
     filename = os.path.basename(filepath)
+    name_only = os.path.splitext(filename)[0]
+    report_name = f"{name_only}_report.pdf"
+    report_path = os.path.join(os.path.expanduser("~"), "Desktop", report_name)
 
     pdf = FPDF()
     pdf.add_page()
     pdf.set_auto_page_break(auto=True, margin=15)
-    
-    pdf.set_font("Arial", 'B', 16)
-    pdf.cell(0, 10, "Black Swan Antivirus Report", ln=True, align='C')
-    
-    pdf.set_font("Arial", size=12)
-    pdf.ln(10)
-    pdf.cell(0, 10, f"Scan Date: {datetime.datetime.now().strftime('%Y-%m-%d %H:%M:%S')}", ln=True)
-    pdf.cell(0, 10, f"File Scanned: {filename}", ln=True)
-    pdf.cell(0, 10, f"Full Path: {filepath}", ln=True)
+
+    # Frame Border
+    margin = 10
+    pdf.rect(x=margin, y=margin, w=190, h=277)
+
+    pdf.set_font("Courier", 'B', 16)
+    pdf.cell(0, 10, "---------- BLACK SWAN ANTIVIRUS REPORT ----------", ln=True, align='C')
+
+    pdf.set_font("Courier", size=12)
+    pdf.ln(8)
+    pdf.cell(0, 10, f"Scan Timestamp : {datetime.datetime.now().strftime('%Y-%m-%d %H:%M:%S')}", ln=True)
+    pdf.cell(0, 10, f"Scanned File    : {filename}", ln=True)
+    pdf.cell(0, 10, f"File Path       : {filepath}", ln=True)
 
     pdf.ln(10)
-    pdf.set_font("Arial", 'B', 14)
-    pdf.cell(0, 10, "Analysis Summary:", ln=True)
+    pdf.set_font("Courier", 'B', 13)
+    pdf.cell(0, 10, "---------- ANALYSIS SUMMARY ----------", ln=True)
+    pdf.set_font("Courier", size=12)
+    pdf.cell(0, 10, f"Entropy Score   : {entropy_score:.2f}", ln=True)
+    pdf.cell(0, 10, f"Rule Matches    : {len(rule_hits)}", ln=True)
+    pdf.cell(0, 10, f"Risk Score      : {risk_score}/100", ln=True)
 
-    pdf.set_font("Arial", size=12)
-    pdf.cell(0, 10, f"Entropy Score: {entropy_score:.2f}", ln=True)
-    pdf.cell(0, 10, f"Risk Score (based on rule matches): {risk_score}/100", ln=True)
-
-    pdf.ln(5)
     if risk_score >= 80:
-        pdf.cell(0, 10, "[CRITICAL] Threat: Immediate action recommended!", ln=True)
+        pdf.set_text_color(200, 0, 0)
+        pdf.cell(0, 10, "ALERT: HIGH RISK - Immediate action recommended.", ln=True)
     elif risk_score >= 50:
-        pdf.cell(0, 10, "[WARNING] High Risk: Multiple suspicious patterns detected.", ln=True)
+        pdf.set_text_color(255, 165, 0)
+        pdf.cell(0, 10, "WARNING: MODERATE RISK - Suspicious indicators found.", ln=True)
     else:
-        pdf.cell(0, 10, "[INFO] Low Risk: No strong threat indicators found.", ln=True)
+        pdf.set_text_color(0, 128, 0)
+        pdf.cell(0, 10, "STATUS: LOW RISK - No strong threat patterns found.", ln=True)
 
     pdf.set_text_color(0, 0, 0)
     pdf.ln(10)
-    pdf.set_font("Arial", 'B', 14)
-    pdf.cell(0, 10, "Matched Rules:", ln=True)
-    pdf.set_font("Arial", size=12)
+    pdf.set_font("Courier", 'B', 13)
+    pdf.cell(0, 10, "---------- MATCHED RULES ----------", ln=True)
+
+    pdf.set_font("Courier", size=12)
     if rule_hits:
         for rule in rule_hits:
             pdf.cell(0, 10, f"- {rule}", ln=True)
     else:
         pdf.cell(0, 10, "No rules matched.", ln=True)
 
-    output_path = os.path.join(os.path.expanduser("~"), "Desktop", "scan_report.pdf")
-    pdf.output(output_path)
-    print(f"PDF report saved at: {output_path}")
+    pdf.ln(10)
+    pdf.set_font("Courier", 'I', 10)
+    pdf.cell(0, 10, "Report generated by Black Swan Antivirus", ln=True, align='C')
 
+    pdf.output(report_path)
+    return report_path
+
+# --- Mainloop ---
 root.mainloop()
