@@ -1,86 +1,91 @@
-====== Black Swan Antivirus Report ======
-Generated on   : 2025-07-26 08:42:16
-File Name      : test_payload.exe
-File Path      : /home/surja/Downloads/Black-Swan-main/test_folder/test_payload.exe
-File Size      : 72.07 KB
-Entropy        : 6.342
-Risk Score     : 30/100
-ML-style Verdict: Clean
-
------------ Scan Output -----------
-[+] Scanning: /home/surja/Downloads/Black-Swan-main/test_folder/test_payload.exe
-✅ Matched rule: alloc_execute_loop_modname_x86
-✅ Matched rule: alloc_execute_finish_x86
-✅ Matched rule: alloc_execute_goodbye_x86
-✅ Matched rule: stager_reverse_tcp_nx_loop_modname_x86
-✅ Matched rule: stager_bind_ipknock_tcp_loop_modname_x86
-✅ Matched rule: stager_bind_ipknock_tcp_finish_x86
-✅ Matched rule: block_api_loop_modname_x86
-✅ Matched rule: block_api_finish_x86
-✅ Matched rule: midstager_loop_modname_x86
-✅ Matched rule: stager_reverse_http_proxy_pstore_loop_modname_x86
-✅ Matched rule: stager_reverse_http_proxy_pstore_finish_x86
-✅ Matched rule: stager_reverse_tcp_rc4_loop_modname_x86
-✅ Matched rule: stager_reverse_tcp_rc4_finish_x86
-✅ Matched rule: stager_reverse_tcp_rc4_handle_failure_x86
-✅ Matched rule: createthread_loop_modname_x86
-✅ Matched rule: createthread_finish_x86
-✅ Matched rule: single_shell_hidden_bind_tcp_loop_modname_x86
-✅ Matched rule: single_shell_hidden_bind_tcp_finish_x86
-✅ Matched rule: single_shell_hidden_bind_tcp_goodbye_x86
-✅ Matched rule: block_exitfunk_goodbye_x86
-✅ Matched rule: Cobalt_functions
-✅ Matched rule: single_service_stuff_loop_modname_x86
-✅ Matched rule: single_service_stuff_finish_x86
-✅ Matched rule: multi_arch_kernel_queue_apc__x64_block_find_dll_loop_mod_name_x64
-✅ Matched rule: BASE64_table
-✅ Matched rule: block_reverse_tcp_handle_failure_x86
-✅ Matched rule: single_loadlibrary_loop_modname_x86
-✅ Matched rule: single_loadlibrary_finish_x86
-✅ Matched rule: single_loadlibrary_goodbye_x86
-✅ Matched rule: stager_reverse_winhttp_loop_modname_x86
-✅ Matched rule: stager_reverse_winhttp_finish_x86
-✅ Matched rule: stager_hidden_bind_tcp_loop_modname_x86
-✅ Matched rule: stager_hidden_bind_tcp_finish_x86
-✅ Matched rule: block_reverse_tcp_allports_set_address_x86
-✅ Matched rule: stager_bind_tcp_rc4_loop_modname_x86
-✅ Matched rule: stager_bind_tcp_rc4_finish_x86
-✅ Matched rule: stager_bind_tcp_nx_loop_modname_x86
-✅ Matched rule: stager_reverse_https_proxy_loop_modname_x86
-✅ Matched rule: stager_reverse_https_proxy_finish_x86
-✅ Matched rule: stager_reverse_https_loop_modname_x86
-✅ Matched rule: stager_reverse_https_finish_x86
-✅ Matched rule: stager_reverse_ipv6_tcp_nx_loop_modname_x86
-✅ Matched rule: block_reverse_tcp_dns_handle_failure_x86
-✅ Matched rule: single_create_remote_process_loop_modname_x86
-✅ Matched rule: single_create_remote_process_finish_x86
-✅ Matched rule: stager_reverse_tcp_nx_allports_loop_modname_x86
-✅ Matched rule: stager_reverse_tcp_nx_allports_finish_x86
-✅ Matched rule: stager_reverse_tcp_nx_allports_set_address_x86
-✅ Matched rule: stager_reverse_tcp_dns_loop_modname_x86
-✅ Matched rule: stager_reverse_tcp_dns_finish_x86
-✅ Matched rule: stager_reverse_tcp_dns_handle_failure_x86
-✅ Matched rule: SEH_Init
-✅ Matched rule: network_tcp_socket
-✅ Matched rule: win_mutex
-✅ Matched rule: win_files_operation
-✅ Matched rule: Str_Win32_Winsock2_Library
-✅ Matched rule: stager_reverse_tcp_rc4_dns_loop_modname_x86
-✅ Matched rule: stager_reverse_tcp_rc4_dns_finish_x86
-✅ Matched rule: stager_reverse_tcp_rc4_dns_handle_failure_x86
-✅ Matched rule: stager_bind_ipv6_tcp_nx_loop_modname_x86
-✅ Matched rule: IsPE32
-✅ Matched rule: IsWindowsGUI
-✅ Matched rule: HasOverlay
-✅ Matched rule: HasDebugData
-✅ Matched rule: HasRichSignature
-✅ Matched rule: migrate_loop_modname_x86
-✅ Matched rule: migrate_finish_x86
-✅ Matched rule: stager_reverse_tcp_dns_connect_only_loop_modname_x86
-✅ Matched rule: stager_reverse_tcp_dns_connect_only_finish_x86
-✅ Matched rule: stager_reverse_tcp_dns_connect_only_handle_failure_x86
-✅ Matched rule: apc_loop_modname_x86
-✅ Matched rule: apc_finish_x86
-
------------ Recommendations -----------
-- No immediate threats detected.
+              BLACK SWAN ANTIVIRUS SCAN REPORT              
+------------------------------------------------------------
+Timestamp: 2025-07-26 11:16:44
+Filename : test_payload.exe
+Location : /home/surja/Downloads/Black-Swan-main/test_payload.exe
+------------------------------------------------------------
+>> ANALYSIS <<
+--Entropy calculated using Shannon's Information Entropy formula--
+Entropy (Shannon): 6.34
+Number of Sections: 4
+Suspicious Sections:
+  - .text: Entropy=7.04
+Flagged Suspicious APIs: ['LoadLibraryA', 'GetProcAddress']
+Risk Score (0-100): 25
+------------------------------------------------------------
+>> FLAGGED RULES <<
+- BASE64_table
+- Cobalt_functions
+- HasDebugData
+- HasOverlay
+- HasRichSignature
+- IsPE32
+- IsWindowsGUI
+- SEH_Init
+- Str_Win32_Winsock2_Library
+- alloc_execute_finish_x86
+- alloc_execute_goodbye_x86
+- alloc_execute_loop_modname_x86
+- apc_finish_x86
+- apc_loop_modname_x86
+- block_api_finish_x86
+- block_api_loop_modname_x86
+- block_exitfunk_goodbye_x86
+- block_reverse_tcp_allports_set_address_x86
+- block_reverse_tcp_dns_handle_failure_x86
+- block_reverse_tcp_handle_failure_x86
+- createthread_finish_x86
+- createthread_loop_modname_x86
+- midstager_loop_modname_x86
+- migrate_finish_x86
+- migrate_loop_modname_x86
+- multi_arch_kernel_queue_apc__x64_block_find_dll_loop_mod_name_x64
+- network_tcp_socket
+- single_create_remote_process_finish_x86
+- single_create_remote_process_loop_modname_x86
+- single_loadlibrary_finish_x86
+- single_loadlibrary_goodbye_x86
+- single_loadlibrary_loop_modname_x86
+- single_service_stuff_finish_x86
+- single_service_stuff_loop_modname_x86
+- single_shell_hidden_bind_tcp_finish_x86
+- single_shell_hidden_bind_tcp_goodbye_x86
+- single_shell_hidden_bind_tcp_loop_modname_x86
+- stager_bind_ipknock_tcp_finish_x86
+- stager_bind_ipknock_tcp_loop_modname_x86
+- stager_bind_ipv6_tcp_nx_loop_modname_x86
+- stager_bind_tcp_nx_loop_modname_x86
+- stager_bind_tcp_rc4_finish_x86
+- stager_bind_tcp_rc4_loop_modname_x86
+- stager_hidden_bind_tcp_finish_x86
+- stager_hidden_bind_tcp_loop_modname_x86
+- stager_reverse_http_proxy_pstore_finish_x86
+- stager_reverse_http_proxy_pstore_loop_modname_x86
+- stager_reverse_https_finish_x86
+- stager_reverse_https_loop_modname_x86
+- stager_reverse_https_proxy_finish_x86
+- stager_reverse_https_proxy_loop_modname_x86
+- stager_reverse_ipv6_tcp_nx_loop_modname_x86
+- stager_reverse_tcp_dns_connect_only_finish_x86
+- stager_reverse_tcp_dns_connect_only_handle_failure_x86
+- stager_reverse_tcp_dns_connect_only_loop_modname_x86
+- stager_reverse_tcp_dns_finish_x86
+- stager_reverse_tcp_dns_handle_failure_x86
+- stager_reverse_tcp_dns_loop_modname_x86
+- stager_reverse_tcp_nx_allports_finish_x86
+- stager_reverse_tcp_nx_allports_loop_modname_x86
+- stager_reverse_tcp_nx_allports_set_address_x86
+- stager_reverse_tcp_nx_loop_modname_x86
+- stager_reverse_tcp_rc4_dns_finish_x86
+- stager_reverse_tcp_rc4_dns_handle_failure_x86
+- stager_reverse_tcp_rc4_dns_loop_modname_x86
+- stager_reverse_tcp_rc4_finish_x86
+- stager_reverse_tcp_rc4_handle_failure_x86
+- stager_reverse_tcp_rc4_loop_modname_x86
+- stager_reverse_winhttp_finish_x86
+- stager_reverse_winhttp_loop_modname_x86
+- win_files_operation
+- win_mutex
+------------------------------------------------------------
+End of Report
+------------------------------------------------------------
