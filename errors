@@ -1,0 +1,27 @@
+Exception in Tkinter callback
+Traceback (most recent call last):
+  File "/usr/lib/python3.13/tkinter/__init__.py", line 2071, in __call__
+    return self.func(*args)
+           ~~~~~~~~~^^^^^^^
+  File "/home/surja/Downloads/Black-Swan-main/guiml.py", line 109, in <lambda>
+    my_button = tb.Button(text="Upload", bootstyle="primary, outline", command=lambda: execute_engine(file_path))
+                                                                                       ~~~~~~~~~~~~~~^^^^^^^^^^^
+  File "/home/surja/Downloads/Black-Swan-main/guiml.py", line 79, in execute_engine
+    generate_pdf_report(file_path, rule_hits, entropy_score, risk_score)
+    ~~~~~~~~~~~~~~~~~~~^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "/home/surja/Downloads/Black-Swan-main/guiml.py", line 165, in generate_pdf_report
+    pdf.output(output_path)
+    ~~~~~~~~~~^^^^^^^^^^^^^
+  File "/home/surja/Downloads/Black-Swan-main/venv/lib/python3.13/site-packages/fpdf/fpdf.py", line 1065, in output
+    self.close()
+    ~~~~~~~~~~^^
+  File "/home/surja/Downloads/Black-Swan-main/venv/lib/python3.13/site-packages/fpdf/fpdf.py", line 246, in close
+    self._enddoc()
+    ~~~~~~~~~~~~^^
+  File "/home/surja/Downloads/Black-Swan-main/venv/lib/python3.13/site-packages/fpdf/fpdf.py", line 1636, in _enddoc
+    self._putpages()
+    ~~~~~~~~~~~~~~^^
+  File "/home/surja/Downloads/Black-Swan-main/venv/lib/python3.13/site-packages/fpdf/fpdf.py", line 1170, in _putpages
+    p = self.pages[n].encode("latin1") if PY3K else self.pages[n]
+        ~~~~~~~~~~~~~~~~~~~~^^^^^^^^^^
+UnicodeEncodeError: 'latin-1' codec can't encode character '\u2713' in position 570: ordinal not in range(256)
