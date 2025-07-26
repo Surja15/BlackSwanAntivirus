@@ -6,6 +6,8 @@ import ttkbootstrap as tb
 import math
 import pefile
 import os
+import datetime
+import re
 
 root = tb.Window(themename="darkly")
 
@@ -21,6 +23,41 @@ text_font = tkfont.Font(family="DejaVu Sans Mono", size=14)
 
 file_path = ""
 upload_type = "file"  # Default upload type is file
+
+def format_report(file_name, engine_output, analysis_report):
+    divider = "-" * 60
+    timestamp = datetime.datetime.now().strftime("%Y-%m-%d %H:%M:%S")
+
+    # Extract flagged rules from engine output (assuming pattern like: rule: X, Y, Z)
+    rule_matches = re.findall(r"rule[s]?:\s*(.*)", engine_output, re.IGNORECASE)
+    rules = []
+    for match in rule_matches:
+        rules.extend([r.strip() for r in match.split(',') if r.strip()])
+    rules = sorted(set(rules))  # Remove duplicates, sort alphabetically
+
+    report = []
+    report.append(f"{'BLACK SWAN ANTIVIRUS SCAN REPORT':^60}")
+    report.append(divider)
+    report.append(f"Timestamp: {timestamp}")
+    report.append(f"Filename : {file_name}")
+    report.append(f"Location : {os.path.abspath(file_name)}")
+    report.append(divider)
+
+    report.append(">> ANALYSIS <<")
+    report.append("--Entropy calculated using Shannon's Information Entropy formula--")
+    report.append(analysis_report.strip())
+    report.append(divider)
+
+    if rules:
+        report.append(">> FLAGGED RULES <<")
+        for rule in rules:
+            report.append(f"- {rule}")
+        report.append(divider)
+
+    report.append("End of Report")
+    report.append(divider)
+
+    return "\n".join(report)
 
 def file_dialog():
     global file_path
@@ -89,18 +126,42 @@ def calculate_entropy(data):
             entropy -= p_x * math.log2(p_x)
     return round(entropy, 2)
 
+import pefile
+import math
+import os
+
+def calculate_entropy(data):
+    if not data:
+        return 0.0
+    entropy = 0
+    byte_counts = [0] * 256
+    for byte in data:
+        byte_counts[byte] += 1
+    for count in byte_counts:
+        if count:
+            p_x = count / len(data)
+            entropy -= p_x * math.log2(p_x)
+    return round(entropy, 2)
+
 def analyze_file_features(path):
     if not os.path.isfile(path):
         return "Invalid file path."
 
     try:
-        # Load raw data
         with open(path, "rb") as f:
             raw_data = f.read()
+
         file_entropy = calculate_entropy(raw_data)
 
-        # Parse PE file
-        pe = pefile.PE(path)
+        # Try parsing as PE file
+        try:
+            pe = pefile.PE(data=raw_data)
+        except pefile.PEFormatError:
+            return (
+                f"Entropy (Shannon): {file_entropy}\n"
+                "Not a valid PE executable — skipping further analysis."
+            )
+
         num_sections = len(pe.sections)
         suspicious_sections = []
         section_entropies = []
@@ -122,43 +183,68 @@ def analyze_file_features(path):
         except AttributeError:
             imports = []
 
-        suspicious_apis = ["VirtualAlloc", "WriteProcessMemory", "CreateRemoteThread", "LoadLibraryA", "GetProcAddress"]
+        suspicious_apis = [
+            "VirtualAlloc", "WriteProcessMemory", "CreateRemoteThread",
+            "LoadLibraryA", "GetProcAddress", "WinExec", "ShellExecuteA"
+        ]
         flagged_apis = [api for api in suspicious_apis if any(api in i for i in imports)]
 
-        # Risk Scoring (very basic heuristic)
+        # Basic risk score heuristic
         risk_score = 0
         if file_entropy > 6.5:
             risk_score += 20
         risk_score += len(suspicious_sections) * 5
         risk_score += len(flagged_apis) * 10
+        risk_score = min(risk_score, 100)
 
-        # Format output
-        output = "\n=== Static Analysis Report ===\n"
-        output += f"Overall File Entropy: {file_entropy}\n"
-        output += f"Number of Sections: {num_sections}\n"
-        output += "Suspicious Sections:\n"
-        for name, ent in suspicious_sections:
-            output += f"  - {name}: Entropy={ent}\n"
-        output += f"Flagged Suspicious APIs: {flagged_apis or 'None'}\n"
-        output += f"Risk Score (0-100): {risk_score}\n"
-        return output
+        # Format result
+        output = []
+        output.append(f"Entropy (Shannon): {file_entropy}")
+        output.append(f"Number of Sections: {num_sections}")
+        output.append("Suspicious Sections:")
+        if suspicious_sections:
+            for name, ent in suspicious_sections:
+                output.append(f"  - {name}: Entropy={ent}")
+        else:
+            output.append("  None")
+
+        output.append(f"Flagged Suspicious APIs: {flagged_apis or 'None'}")
+        output.append(f"Risk Score (0-100): {risk_score}")
+
+        return "\n".join(output)
 
     except Exception as e:
-        return f"Error in analysis: {e}"
+        return f"Error during analysis: {e}"
+
 
 # Hook it to run after engine output
 def execute_engine(file_path):
-    if file_path:
-        file_label.config(text=file_path)
-        result = subprocess.run(["/home/surja/Downloads/Black-Swan-main/engine", file_path], stdout=subprocess.PIPE)
-        output_text.delete(1.0, END)
-        output_text.insert(END, result.stdout.decode())
-
-        # Append static analysis report
-        static_report = analyze_file_features(file_path)
-        output_text.insert(END, "\n" + static_report)
-        output_text.see(END)
-    else:
+    if not file_path:
         file_label.config(text="No path selected")
+        return
+
+    file_label.config(text=file_path)
+    
+    # Run external engine
+    result = subprocess.run(["/home/surja/Downloads/Black-Swan-main/engine", file_path], stdout=subprocess.PIPE)
+    engine_output = result.stdout.decode()
+
+    # Perform static analysis
+    static_report = analyze_file_features(file_path)
+
+    # Combine and show in GUI
+    full_report = engine_output + "\n" + static_report
+    output_text.delete(1.0, END)
+    output_text.insert(END, full_report)
+    output_text.see(END)
+
+    # Create professional-looking .txt report
+    file_name = os.path.basename(file_path)
+    report_path = os.path.join(os.path.dirname(file_path), f"{file_name}_BlackSwanReport.txt")
+
+    with open(report_path, "w", encoding="utf-8") as report:
+        report.write(format_report(file_name, engine_output, static_report))
+
+    print(f"Report saved to: {report_path}")
 
 root.mainloop()
