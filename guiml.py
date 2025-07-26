@@ -140,15 +140,12 @@ def generate_pdf_report(filepath, rule_hits, entropy_score, risk_score):
     pdf.cell(0, 10, f"Risk Score (based on rule matches): {risk_score}/100", ln=True)
 
     pdf.ln(5)
-    if risk_score >= 70:
-        pdf.set_text_color(200, 0, 0)
-        pdf.cell(0, 10, f"⚠️ High Risk: Multiple suspicious patterns detected.", ln=True)
-    elif risk_score >= 40:
-        pdf.set_text_color(255, 140, 0)
-        pdf.cell(0, 10, f"⚠️ Medium Risk: Potentially suspicious behavior.", ln=True)
+    if risk_score >= 80:
+        pdf.cell(0, 10, "[CRITICAL] Threat: Immediate action recommended!", ln=True)
+    elif risk_score >= 50:
+        pdf.cell(0, 10, "[WARNING] High Risk: Multiple suspicious patterns detected.", ln=True)
     else:
-        pdf.set_text_color(0, 150, 0)
-        pdf.cell(0, 10, f"✓ Low Risk: No major threats found.", ln=True)
+        pdf.cell(0, 10, "[INFO] Low Risk: No strong threat indicators found.", ln=True)
 
     pdf.set_text_color(0, 0, 0)
     pdf.ln(10)
