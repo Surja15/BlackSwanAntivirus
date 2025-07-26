@@ -69,24 +69,28 @@ def generate_report(file_path, output):
     timestamp = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
 
     with open(report_path, "w") as f:
-        f.write("====== Black Swan Antivirus Report ======\n")
-        f.write(f"Generated on   : {timestamp}\n")
+        f.write("====== Black Swan Antivirus Scan Report ======\n")
+        f.write(f"Generated On   : {timestamp}\n")
         f.write(f"File Name      : {file_name}\n")
         f.write(f"File Path      : {file_path}\n")
         f.write(f"File Size      : {file_size} KB\n")
-        f.write(f"Entropy        : {entropy}\n")
-        f.write(f"Risk Score     : {risk_score}/100\n")
-        f.write(f"ML-style Verdict: {verdict}\n\n")
-        f.write("----------- Scan Output -----------\n")
+        f.write(f"Shannon Entropy: {entropy} bits/byte\n")
+        f.write(f"Heuristic Score: {risk_score}/100\n")
+        f.write(f"Final Verdict  : {verdict}\n")
+        f.write("\n----------- Scan Output -----------\n")
         f.write(output + "\n")
-        f.write("----------- Recommendations -----------\n")
+        f.write("\n----------- Analysis & Recommendation -----------\n")
         if verdict == "Malicious":
-            f.write("- Immediate quarantine recommended.\n- Do not execute the file.\n- Submit to virus lab.\n")
+            f.write("- The file contains multiple indicators of malicious behavior.\n")
+            f.write("- Quarantine and submit for deeper analysis.\n")
+            f.write("- Avoid execution on any system.\n")
         elif verdict == "Suspicious":
-            f.write("- Manual inspection recommended.\n- Avoid running unless trusted.\n")
+            f.write("- Indicators suggest potential threat.\n")
+            f.write("- Proceed only after manual inspection.\n")
+            f.write("- Use sandboxing if necessary.\n")
         else:
-            f.write("- No immediate threats detected.\n")
-
+            f.write("- File appears clean based on entropy and heuristic string matches.\n")
+            f.write("- No immediate action required.\n")
     return report_path
 
 # -------------------- UI Logic --------------------
@@ -103,7 +107,10 @@ def file_dialog():
 
 def execute_engine(file_path):
     if file_path:
-        result = subprocess.run(["/home/surja/Downloads/Black-Swan-main/engine", file_path], stdout=subprocess.PIPE)
+        result = subprocess.run(
+            ["/home/surja/Downloads/Black-Swan-main/engine", file_path],
+            stdout=subprocess.PIPE,
+        )
         output = result.stdout.decode()
         output_text.delete(1.0, END)
         output_text.insert(END, output)
@@ -111,7 +118,7 @@ def execute_engine(file_path):
 
         # -------- Generate Report --------
         report_path = generate_report(file_path, output)
-        output_text.insert(END, f"\n[✓] Report saved to: {report_path}\n")
+        output_text.insert(END, f"\n[✓] Professional Report saved at:\n{report_path}\n")
     else:
         file_label.config(text="No path selected")
 
@@ -125,10 +132,14 @@ def toggle_upload_type():
         toggle_button.config(text="Switch to Directory Upload")
 
 # -------------------- UI Elements --------------------
-my_label = tb.Label(text="Black Swan Antivirus", font=("DejaVu Sans Mono", 40, "bold"), bootstyle="default")
+my_label = tb.Label(
+    text="Black Swan Antivirus", font=("DejaVu Sans Mono", 40, "bold"), bootstyle="default"
+)
 my_label.pack(pady=10)
 
-toggle_button = tb.Button(text="Switch to Directory Upload", bootstyle="secondary", command=toggle_upload_type)
+toggle_button = tb.Button(
+    text="Switch to Directory Upload", bootstyle="secondary", command=toggle_upload_type
+)
 toggle_button.pack(pady=10)
 
 file_label = tb.Label(text="", font=("DejaVu Sans Mono", 12), bootstyle="default")
@@ -139,14 +150,18 @@ image_button = tb.Label(image=image)
 image_button.pack(pady=10)
 image_button.bind("<Button-1>", lambda event: file_dialog())
 
-my_button = tb.Button(text="Upload", bootstyle="primary, outline", command=lambda: execute_engine(file_path))
+my_button = tb.Button(
+    text="Upload", bootstyle="primary, outline", command=lambda: execute_engine(file_path)
+)
 my_button.config(padding="40 15")
 my_button.pack(pady=20)
 
-my_label2 = tb.Label(text="Scan results", font=("DejaVu Sans Mono", 30, "bold"), bootstyle="default")
+my_label2 = tb.Label(
+    text="Scan results", font=("DejaVu Sans Mono", 30, "bold"), bootstyle="default"
+)
 my_label2.pack(pady=20)
 
-output_text = Text(root, width=200, height=30, wrap='word', font=text_font)
+output_text = Text(root, width=200, height=30, wrap="word", font=text_font)
 output_text.pack(pady=10)
 
 root.mainloop()
