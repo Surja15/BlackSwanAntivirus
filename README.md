@@ -102,3 +102,14 @@ Suspicious Sections:	Sections with unusually high entropy	Potentially obfuscated
 .text: Entropy=7.04	High entropy in executable code section	Strong sign of packing or encryption
 Flagged Suspicious APIs	Imports of risky system calls	Indicates possible malicious behavior
 Risk Score (0-100): 25	Heuristic combined risk score	Overall threat likelihood
+
+
+
+
+# exclusions.txt
+/home/user/.cache
+/home/user/Downloads
+/proc
+/sys
+/tmp
+
