@@ -62,7 +62,7 @@ void* ScanThread(void* arg) {
 
     pid_t pid = fork();
     if (pid == 0) {  // child process
-        execl("/home/diya/antivirusproject/Black-Swan/engine", 
+        execl("/home/surja/Downloads/Black-Swan-main/engine", 
         "./engine", data->filePath, (char *)NULL);
         perror("execl failed");
         exit(1);
