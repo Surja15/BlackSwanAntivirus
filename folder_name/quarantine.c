@@ -1,8 +1,7 @@
 // quarantine.c
-// Standalone quarantine module for Black Swan AV
-// Compile: gcc quarantine.c -o quarantine
-// Usage:   ./quarantine quarantine <filepath>
-//          ./quarantine restore <filename>
+// Standalone quarantine module for Black Swan AV by S15
+// Compile with engine: gcc engine.c quarantine.c -o engine -lyara
+// After first run, lock log: sudo chattr +a ~/quarantine/quarantine_log.txt
 
 #include <stdio.h>
 #include <stdlib.h>
@@ -20,12 +19,11 @@
 #define PARTS           2
 // ───────────────────────────────────────────────────────────────────────────
 
-// XOR encrypt/decrypt (same function, XOR is symmetric)
+// XOR encrypt/decrypt (symmetric)
 static void xor_crypt(unsigned char* data, size_t len) {
     const char* key = KEY;
-    for (size_t i = 0; i < len; i++) {
+    for (size_t i = 0; i < len; i++)
         data[i] ^= (unsigned char)key[i % KEY_LEN];
-    }
 }
 
 // Ensure quarantine directory exists
@@ -40,18 +38,36 @@ static int ensure_quarantine_dir() {
     return 0;
 }
 
+// ─── Log Protection ────────────────────────────────────────────────────────
+// Sets log to read-only after every write.
+// For full append-only immutability, run ONCE as root after first use:
+//   sudo chattr +a /home/surja/quarantine/quarantine_log.txt
+static void lock_log_file() {
+    chmod(LOG_FILE, 0444);  // read-only for all users
+}
+
+// ─── Timestamps ────────────────────────────────────────────────────────────
+// Human-readable for log:       2026-03-17 14:30:22
+static void get_timestamp(char* buf, size_t len) {
+    time_t now = time(NULL);
+    struct tm* t = localtime(&now);
+    strftime(buf, len, "%Y-%m-%d %H:%M:%S", t);
+}
+
+// Compact for filenames:        20260317_143022
+static void get_file_timestamp(char* buf, size_t len) {
+    time_t now = time(NULL);
+    struct tm* t = localtime(&now);
+    strftime(buf, len, "%Y%m%d_%H%M%S", t);
+}
+
 // ─── Quarantine ────────────────────────────────────────────────────────────
-// Called by engine via CallQuarantine(filepath, matched_rules)
-// Can also be called standalone from CLI
 int quarantine_file(const char* file_path, const char* matched_rules) {
     if (ensure_quarantine_dir() != 0) return -1;
 
     // Read file
     FILE* f = fopen(file_path, "rb");
-    if (!f) {
-        fprintf(stderr, "[-] Cannot open file: %s\n", strerror(errno));
-        return -1;
-    }
+    if (!f) { fprintf(stderr, "[-] Cannot open file: %s\n", strerror(errno)); return -1; }
     fseek(f, 0, SEEK_END);
     long file_size = ftell(f);
     rewind(f);
@@ -64,19 +80,19 @@ int quarantine_file(const char* file_path, const char* matched_rules) {
     // XOR encrypt in-place
     xor_crypt(data, file_size);
 
-    // Timestamp for part names: HHMMSS-DDMMYY
-    time_t now = time(NULL);
-    struct tm* t = localtime(&now);
-    char timestamp[32];
-    strftime(timestamp, sizeof(timestamp), "%H%M%S-%d%m%y", t);
+    // Two timestamp formats
+    char ts_readable[32];
+    char ts_filename[32];
+    get_timestamp(ts_readable, sizeof(ts_readable));
+    get_file_timestamp(ts_filename, sizeof(ts_filename));
 
-    // Split into PARTS and write each part
+    // Split into PARTS and write
     long chunk = file_size / PARTS;
     char part_names[PARTS][256];
 
     for (int i = 0; i < PARTS; i++) {
         snprintf(part_names[i], sizeof(part_names[i]),
-                 "%s/%s_%c", QUARANTINE_DIR, timestamp, 'a' + i);
+                 "%s/%s_%c", QUARANTINE_DIR, ts_filename, 'a' + i);
 
         long offset = i * chunk;
         long size   = (i == PARTS - 1) ? (file_size - offset) : chunk;
@@ -92,15 +108,14 @@ int quarantine_file(const char* file_path, const char* matched_rules) {
     }
     free(data);
 
-    // Extract just the filename (basename) from path
+    // Basename
     const char* basename = strrchr(file_path, '/');
     basename = basename ? basename + 1 : file_path;
 
-    // Log: filename|timestamp|part_a,part_b|rules_matched
+    // Log: [2026-03-17 14:30:22] filename|20260317_143022|part_a,part_b|rules
     FILE* log = fopen(LOG_FILE, "a");
     if (log) {
-        fprintf(log, "%s|%s|", basename, timestamp);
-        // write part basenames only (no full path in log)
+        fprintf(log, "[%s] %s|%s|", ts_readable, basename, ts_filename);
         for (int i = 0; i < PARTS; i++) {
             const char* pbn = strrchr(part_names[i], '/');
             pbn = pbn ? pbn + 1 : part_names[i];
@@ -108,11 +123,11 @@ int quarantine_file(const char* file_path, const char* matched_rules) {
         }
         fprintf(log, "|%s\n", matched_rules ? matched_rules : "N/A");
         fclose(log);
+        lock_log_file();  // protect after every write
     }
 
     printf("[+] Quarantined: %s -> %s\n", file_path, QUARANTINE_DIR);
 
-    // Remove original
     if (remove(file_path) != 0)
         fprintf(stderr, "[!] Warning: could not remove original: %s\n", strerror(errno));
 
@@ -121,7 +136,6 @@ int quarantine_file(const char* file_path, const char* matched_rules) {
 
 // ─── Restore ───────────────────────────────────────────────────────────────
 int restore_file(const char* filename) {
-    // Password check
     char password[64];
     printf("Enter password to restore: ");
     fflush(stdout);
@@ -133,12 +147,8 @@ int restore_file(const char* filename) {
         return -1;
     }
 
-    // Read log to find parts
     FILE* log = fopen(LOG_FILE, "r");
-    if (!log) {
-        printf("[-] No log found. Cannot restore.\n");
-        return -1;
-    }
+    if (!log) { printf("[-] No log found. Cannot restore.\n"); return -1; }
 
     char line[1024];
     char found_parts[PARTS][256];
@@ -147,14 +157,20 @@ int restore_file(const char* filename) {
     while (fgets(line, sizeof(line), log)) {
         line[strcspn(line, "\n")] = 0;
 
-        // Parse: orig|timestamp|part_a,part_b|rules
-        char orig[256], timestamp[64], parts_str[512], rules[512];
-        if (sscanf(line, "%255[^|]|%63[^|]|%511[^|]|%511[^\n]",
-                   orig, timestamp, parts_str, rules) < 3)
+        // Strip "[2026-03-17 14:30:22] " prefix
+        char* entry = line;
+        if (line[0] == '[') {
+            entry = strchr(line, ']');
+            if (entry) entry += 2;  // skip "] "
+            else entry = line;
+        }
+
+        char orig[256], ts_filename[64], parts_str[512], rules[512];
+        if (sscanf(entry, "%255[^|]|%63[^|]|%511[^|]|%511[^\n]",
+                   orig, ts_filename, parts_str, rules) < 3)
             continue;
 
         if (strcmp(orig, filename) == 0) {
-            // Split parts_str by comma
             char* token = strtok(parts_str, ",");
             int idx = 0;
             while (token && idx < PARTS) {
@@ -169,12 +185,9 @@ int restore_file(const char* filename) {
     }
     fclose(log);
 
-    if (!found) {
-        printf("[-] No record of '%s' in quarantine log.\n", filename);
-        return -1;
-    }
+    if (!found) { printf("[-] No record of '%s' in log.\n", filename); return -1; }
 
-    // Read and combine all parts
+    // Combine parts
     size_t total_size = 0;
     unsigned char* combined = NULL;
 
@@ -199,7 +212,6 @@ int restore_file(const char* filename) {
     // XOR decrypt
     xor_crypt(combined, total_size);
 
-    // Write restored file to current directory
     FILE* out = fopen(filename, "wb");
     if (!out) {
         fprintf(stderr, "[-] Cannot write restored file: %s\n", strerror(errno));
@@ -220,12 +232,11 @@ int main(int argc, char* argv[]) {
         printf("Usage: %s <quarantine|restore> <file>\n", argv[0]);
         return 1;
     }
-
-    if (strcmp(argv[1], "quarantine") == 0) {
+    if (strcmp(argv[1], "quarantine") == 0)
         return quarantine_file(argv[2], NULL);
-    } else if (strcmp(argv[1], "restore") == 0) {
+    else if (strcmp(argv[1], "restore") == 0)
         return restore_file(argv[2]);
-    } else {
+    else {
         printf("[-] Unknown action: %s\n", argv[1]);
         return 1;
     }
