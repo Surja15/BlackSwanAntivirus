@@ -67,7 +67,7 @@ int main(int argc, char* argv[]) {
         return 1;
     }
 
-    const char* rules_dir = "/home/diya/antivirusproject/Black-Swan/myrule/compiled/";
+    const char* rules_dir = "/home/surja/Downloads/Black-Swan-main/myrule/compiled/";
     const char* target_path = argv[1];
 
     if (yr_initialize() != ERROR_SUCCESS) {
