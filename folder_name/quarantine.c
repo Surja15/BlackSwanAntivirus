@@ -43,7 +43,7 @@ static int ensure_quarantine_dir() {
 // For full append-only immutability, run ONCE as root after first use:
 //   sudo chattr +a /home/surja/quarantine/quarantine_log.txt
 static void lock_log_file() {
-    chmod(LOG_FILE, 0444);  // read-only for all users
+    (void)0;  // use chattr +a
 }
 
 // ─── Timestamps ────────────────────────────────────────────────────────────
