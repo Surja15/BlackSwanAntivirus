@@ -5,6 +5,8 @@
 #include <dirent.h>
 #include <yara.h>
 #include <sys/stat.h>
+#include <limits.h>   // PATH_MAX
+#include <stdlib.h>   // realpath
 
 int quarantine_file(const char* file_path, const char* matched_rules);
 
@@ -45,10 +47,10 @@ void scanAndQuarantineFile(const char* filePath, YR_RULES** rule_set, int rule_c
     }
 }
 
-void scanDirectoryRecursively(const char* dirPath, YR_RULES** rule_set, int rule_count) {
-    // Skip quarantine directory entirely
-    if (strstr(dirPath, "/quarantine") != NULL) return;
-
+// basePath = the original top-level directory we started scanning
+// only recurse if the resolved path is strictly BELOW basePath
+void scanDirectoryRecursively(const char* dirPath, const char* basePath,
+                               YR_RULES** rule_set, int rule_count) {
     DIR* dir = opendir(dirPath);
     if (!dir) {
         perror("[-] Failed to open directory");
@@ -64,14 +66,25 @@ void scanDirectoryRecursively(const char* dirPath, YR_RULES** rule_set, int rule
 
         snprintf(path, sizeof(path), "%s/%s", dirPath, entry->d_name);
 
+        // Resolve to absolute real path — catches symlinks, ../ tricks, everything
+        char realPath[PATH_MAX];
+        if (realpath(path, realPath) == NULL)
+            continue;  // can't resolve = skip
+
+        // ONLY proceed if realPath is strictly inside basePath
+        // i.e. realPath must START with basePath
+        size_t baseLen = strlen(basePath);
+        if (strncmp(realPath, basePath, baseLen) != 0)
+            continue;  // path escapes base — skip it
+
         struct stat st;
-        lstat(path, &st);  // lstat: does NOT follow symlinks — prevents infinite loop
+        lstat(path, &st);  // lstat: don't follow symlinks
 
         if (S_ISDIR(st.st_mode))
-            scanDirectoryRecursively(path, rule_set, rule_count);
+            scanDirectoryRecursively(path, basePath, rule_set, rule_count);  // go deeper only
         else if (S_ISREG(st.st_mode))
-            scanAndQuarantineFile(path, rule_set, rule_count);
-        // symlinks (S_ISLNK) are simply skipped — not followed
+            scanAndQuarantineFile(realPath, rule_set, rule_count);
+        // symlinks skipped entirely — lstat returns S_ISLNK, matches neither above
     }
 
     closedir(dir);
@@ -119,13 +132,21 @@ int main(int argc, char* argv[]) {
 
     printf("[+] Loaded %d rule file(s). Scanning: %s\n", rule_count, target_path);
 
+    // Resolve target to absolute path — this becomes the boundary
+    char absTarget[PATH_MAX];
+    if (realpath(target_path, absTarget) == NULL) {
+        fprintf(stderr, "[-] Cannot resolve target path: %s\n", target_path);
+        yr_finalize();
+        return 1;
+    }
+
     struct stat path_stat;
-    lstat(target_path, &path_stat);  // lstat here too
+    lstat(absTarget, &path_stat);
 
     if (S_ISREG(path_stat.st_mode))
-        scanAndQuarantineFile(target_path, rule_set, rule_count);
+        scanAndQuarantineFile(absTarget, rule_set, rule_count);
     else if (S_ISDIR(path_stat.st_mode))
-        scanDirectoryRecursively(target_path, rule_set, rule_count);
+        scanDirectoryRecursively(absTarget, absTarget, rule_set, rule_count);  // basePath = absTarget
     else
         printf("[-] Unknown target type.\n");
 
