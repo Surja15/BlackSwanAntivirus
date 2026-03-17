@@ -241,3 +241,7 @@ int main(int argc, char* argv[]) {
         return 1;
     }
 }
+
+/*and if for some reason you want to delete log file, need to do it manually
+sudo chattr -a ~/quarantine/quarantine_log.txt
+sudo rm ~/quarantine/quarantine_log.txt*/
