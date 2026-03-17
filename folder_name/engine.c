@@ -4,6 +4,7 @@
 #include <dirent.h>
 #include <yara.h>
 #include <sys/stat.h>
+int quarantine_file(const char* file_path, const char* matched_rules);
 
 #define PATH_SEPARATOR '/'
 #define BUFFER_SIZE 1024
@@ -60,7 +61,17 @@ void scanDirectoryRecursively(const char* dirPath, YR_RULES* rules, MatchList* m
 
     closedir(dir);
 }
-
+void CallQuarantine(const char* filePath, MatchList* matchList) {
+    // Build a comma-separated string of all matched rule names
+    char rules_str[1024] = "";
+    for (int i = 0; i < matchList->count; i++) {
+        strncat(rules_str, matchList->matches[i], sizeof(rules_str) - strlen(rules_str) - 2);
+        if (i < matchList->count - 1)
+            strncat(rules_str, ",", sizeof(rules_str) - strlen(rules_str) - 1);
+    }
+    printf("[!] Sending to quarantine: %s | Rules: %s\n", filePath, rules_str);
+    quarantine_file(filePath, rules_str);
+}
 int main(int argc, char* argv[]) {
     if (argc != 2) {
         printf("Usage: %s <file-or-directory-to-scan>\n", argv[0]);
@@ -105,11 +116,14 @@ int main(int argc, char* argv[]) {
                     printf("[-] Unknown target type.\n");
 
                 if (matchList.count > 0) {
-                    for (int i = 0; i < matchList.count; ++i) {
-                        printf("✅ Matched rule: %s\n", matchList.matches[i]);
-                        free(matchList.matches[i]);
-                    }
-                }
+    for (int i = 0; i < matchList.count; ++i)
+        printf("✅ Matched rule: %s\n", matchList.matches[i]);
+
+    CallQuarantine(target_path, &matchList);  // ← this is what's missing
+
+    for (int i = 0; i < matchList.count; ++i)
+        free(matchList.matches[i]);           // free AFTER quarantine is done
+}
 
                 yr_rules_destroy(rules);
             } else {
