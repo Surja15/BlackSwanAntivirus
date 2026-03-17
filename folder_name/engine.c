@@ -11,7 +11,6 @@ int quarantine_file(const char* file_path, const char* matched_rules);
 #define BUFFER_SIZE 1024
 #define RULES_STR_MAX 1024
 
-// Simple scan context — just accumulate matched rule names into a string
 typedef struct {
     char rules_str[RULES_STR_MAX];
     int  matched;
@@ -31,7 +30,6 @@ int scanCallback(YR_SCAN_CONTEXT* context, int message, void* message_data, void
     return CALLBACK_CONTINUE;
 }
 
-// Scan one file against all rules, quarantine immediately if matched
 void scanAndQuarantineFile(const char* filePath, YR_RULES** rule_set, int rule_count) {
     ScanResult result = {.rules_str = "", .matched = 0};
 
@@ -47,8 +45,10 @@ void scanAndQuarantineFile(const char* filePath, YR_RULES** rule_set, int rule_c
     }
 }
 
-// Recurse directory, each file treated independently
 void scanDirectoryRecursively(const char* dirPath, YR_RULES** rule_set, int rule_count) {
+    // Skip quarantine directory entirely
+    if (strstr(dirPath, "/quarantine") != NULL) return;
+
     DIR* dir = opendir(dirPath);
     if (!dir) {
         perror("[-] Failed to open directory");
@@ -65,12 +65,13 @@ void scanDirectoryRecursively(const char* dirPath, YR_RULES** rule_set, int rule
         snprintf(path, sizeof(path), "%s/%s", dirPath, entry->d_name);
 
         struct stat st;
-        stat(path, &st);
+        lstat(path, &st);  // lstat: does NOT follow symlinks — prevents infinite loop
 
         if (S_ISDIR(st.st_mode))
             scanDirectoryRecursively(path, rule_set, rule_count);
         else if (S_ISREG(st.st_mode))
             scanAndQuarantineFile(path, rule_set, rule_count);
+        // symlinks (S_ISLNK) are simply skipped — not followed
     }
 
     closedir(dir);
@@ -90,7 +91,6 @@ int main(int argc, char* argv[]) {
         return 1;
     }
 
-    // Load all rule files upfront
     DIR* dir = opendir(rules_dir);
     if (!dir) {
         perror("[-] Failed to open compiled rules directory");
@@ -120,7 +120,7 @@ int main(int argc, char* argv[]) {
     printf("[+] Loaded %d rule file(s). Scanning: %s\n", rule_count, target_path);
 
     struct stat path_stat;
-    stat(target_path, &path_stat);
+    lstat(target_path, &path_stat);  // lstat here too
 
     if (S_ISREG(path_stat.st_mode))
         scanAndQuarantineFile(target_path, rule_set, rule_count);
