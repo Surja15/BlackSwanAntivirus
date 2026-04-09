@@ -1,4 +1,4 @@
-//RTM code//                                                                                                                                                                                                                                                 #include <stdio.h>
+#include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
 #include <pthread.h>
@@ -7,211 +7,190 @@
 #include <limits.h>
 #include <errno.h>
 #include <sys/wait.h>
-#include <dirent.h> //S15
-#include <sys/stat.h> //S15
-#include <stdbool.h> //S15
-char exceptions[50][PATH_MAX]; int exCount = 0; //For exceptions S15
+#include <dirent.h>
+#include <sys/stat.h>
+#include <stdbool.h>
+#include <semaphore.h>
 
-void LoadExceptions() { //S15
+#define MAX_THREADS 5
+#define MAX_WATCHES 2048
+#define EVENT_SIZE (sizeof(struct inotify_event))
+#define BUF_LEN (1024 * (EVENT_SIZE + NAME_MAX + 1))
+
+char exceptions[50][PATH_MAX];
+int exCount = 0;
+sem_t thread_sem;
+pthread_mutex_t map_mutex = PTHREAD_MUTEX_INITIALIZER;
+
+typedef struct {
+    int wd;
+    char path[PATH_MAX];
+} WatchMap;
+
+WatchMap watch_list[MAX_WATCHES];
+int watch_count = 0;
+
+// --- Helper Functions ---
+
+void LoadExceptions() {
     FILE* f = fopen("exceptions.txt", "r");
     if (!f) return;
-    while (fgets(exceptions[exCount], PATH_MAX, f) && exCount < 50) {
+    while (exCount < 50 && fgets(exceptions[exCount], PATH_MAX, f)) {
         exceptions[exCount][strcspn(exceptions[exCount], "\n")] = 0;
         exCount++;
     }
     fclose(f);
 }
 
-bool IsExcluded(const char* path) { //S15
+void add_to_map(int wd, const char* path) {
+    pthread_mutex_lock(&map_mutex);
+    if (watch_count < MAX_WATCHES) {
+        watch_list[watch_count].wd = wd;
+        strncpy(watch_list[watch_count].path, path, PATH_MAX - 1);
+        watch_count++;
+    }
+    pthread_mutex_unlock(&map_mutex);
+}
+
+const char* get_path_from_wd(int wd) {
+    pthread_mutex_lock(&map_mutex);
+    for (int i = 0; i < watch_count; i++) {
+        if (watch_list[i].wd == wd) {
+            pthread_mutex_unlock(&map_mutex);
+            return watch_list[i].path;
+        }
+    }
+    pthread_mutex_unlock(&map_mutex);
+    return NULL;
+}
+
+bool IsExcluded(const char* path) {
     char absPath[PATH_MAX];
-    realpath(path, absPath);  // normalize to absolute path if possible
+    if (!realpath(path, absPath)) strncpy(absPath, path, PATH_MAX - 1);
 
     for (int i = 0; i < exCount; i++) {
-        if (exceptions[i][0] == '\0') continue;
-
-        // Normalize exclusion path (remove trailing slash)
-        char exNorm[PATH_MAX];
-        strncpy(exNorm, exceptions[i], PATH_MAX - 1);
-        exNorm[PATH_MAX - 1] = '\0';
-        size_t len = strlen(exNorm);
-        if (len > 0 && exNorm[len - 1] == '/')
-            exNorm[len - 1] = '\0';
-
-        // Convert exclusion path to absolute path as well
-        char exAbs[PATH_MAX];
-        if (realpath(exNorm, exAbs) == NULL)
-            strncpy(exAbs, exNorm, PATH_MAX - 1);
-
-        // Now check if 'path' begins with the exclusion directory
-        if (strncmp(absPath, exAbs, strlen(exAbs)) == 0)
-            return true;
+        if (strstr(absPath, exceptions[i]) != NULL) return true;
     }
     return false;
 }
 
+// --- Engine Execution ---
 
-#define EVENT_SIZE (sizeof(struct inotify_event))
-#define BUF_LEN (1024 * (EVENT_SIZE + NAME_MAX + 1))
-
-struct ScanArgs { //S15
+struct ScanArgs {
     char filePath[PATH_MAX];
 };
 
 void* ScanThread(void* arg) {
     struct ScanArgs* data = (struct ScanArgs*)arg;
-
     pid_t pid = fork();
-    if (pid == 0) {  // child process
-        execl("/home/surja/Downloads/Black-Swan-main/engine", 
-        "./engine", data->filePath, (char *)NULL);
+    if (pid == 0) {
+        execl("/home/surja/Downloads/Black-Swan-main/engine", "engine", data->filePath, (char *)NULL);
         perror("execl failed");
         exit(1);
-    } else if (pid < 0) {
-        perror("fork failed");
-    } else {
-        wait(NULL);  // parent waits for this scan's child
+    } else if (pid > 0) {
+        waitpid(pid, NULL, 0);
     }
-
     free(data);
+    sem_post(&thread_sem);
     return NULL;
-} //S15
+}
 
-void CallDetectionEngine(const char* filePath) { //S15
-if (IsExcluded(filePath)) return;   // for CallDetectionEngine
-
-    printf("[+] Called detection for: %s\n", filePath);
-    fflush(stdout);
-
-    pthread_t scanThread;
+void CallDetectionEngine(const char* filePath) {
+    if (IsExcluded(filePath)) return;
+    
     struct ScanArgs* args = malloc(sizeof(struct ScanArgs));
     strncpy(args->filePath, filePath, PATH_MAX - 1);
-    args->filePath[PATH_MAX - 1] = '\0';
 
-    if (pthread_create(&scanThread, NULL, ScanThread, args) != 0) {
-        perror("pthread_create for ScanThread");
+    sem_wait(&thread_sem);
+    pthread_t scanThread;
+    if (pthread_create(&scanThread, NULL, ScanThread, args) == 0) {
+        pthread_detach(scanThread);
+    } else {
         free(args);
-        return;
+        sem_post(&thread_sem);
     }
+}
 
-    pthread_detach(scanThread); // don't block main RTM
-}//S15
+// --- Monitoring Logic ---
 
-void AddWatchRecursively(int fd, const char* basePath) { //S15
-if (IsExcluded(basePath)) return;   // for AddWatchRecursively
+void AddWatchRecursively(int fd, const char* basePath) {
+    if (IsExcluded(basePath)) return;
 
-    int wd = inotify_add_watch(fd, basePath, IN_CREATE | IN_MODIFY | IN_CLOSE_WRITE);
-    if (wd < 0) {
-        fprintf(stderr, "[-] Failed to watch: %s -> %s\n", basePath, strerror(errno));
-        return;
-    }
+    // IN_CLOSE_WRITE is the gold standard for finished file writes
+    int wd = inotify_add_watch(fd, basePath, IN_CREATE | IN_CLOSE_WRITE | IN_MOVED_TO);
+    if (wd < 0) return;
+
+    add_to_map(wd, basePath);
 
     DIR* dir = opendir(basePath);
     if (!dir) return;
 
     struct dirent* entry;
     while ((entry = readdir(dir)) != NULL) {
-        if (strcmp(entry->d_name, ".") == 0 || strcmp(entry->d_name, "..") == 0)
-            continue;
-
+        if (entry->d_name[0] == '.') continue;
         char path[PATH_MAX];
         snprintf(path, sizeof(path), "%s/%s", basePath, entry->d_name);
-
+        
         struct stat st;
         if (stat(path, &st) == 0 && S_ISDIR(st.st_mode)) {
-    if (!IsExcluded(path))          // skip excluded folders - S15.2
-        AddWatchRecursively(fd, path); // recursive call for subfolder
-}
-
+            AddWatchRecursively(fd, path);
+        }
     }
-
     closedir(dir);
-}//S15
-
-void* MonitorDirectoryThread(void* arg) { //S15
-    char* directoryPath = (char*)arg;
-if (IsExcluded(directoryPath)) {    // skip excluded directories entirely  S15.3
-    printf("[-] Skipping excluded root directory: %s\n", directoryPath);
-    free(directoryPath);
-    return NULL;
 }
 
+void* MonitorDirectoryThread(void* arg) {
+    char* directoryPath = (char*)arg;
     int fd = inotify_init();
-    if (fd < 0) {
-        perror("inotify_init");
-        free(directoryPath);
-        return NULL;
-    }
+    if (fd < 0) { perror("inotify_init"); return NULL; }
 
-    // Add recursive watch on base directory and its subdirectories
     AddWatchRecursively(fd, directoryPath);
-
-    printf("[+] Monitoring directory (recursive): %s\n", directoryPath);
-    fflush(stdout);
+    printf("[+] Monitoring: %s\n", directoryPath);
 
     char buffer[BUF_LEN];
     while (1) {
         ssize_t length = read(fd, buffer, BUF_LEN);
-        if (length < 0) {
-            perror("read");
-            break;
-        }
+        if (length < 0) break;
 
         ssize_t i = 0;
         while (i < length) {
             struct inotify_event *event = (struct inotify_event *)&buffer[i];
-            if (event->len) {
+            if (event->len > 0) {
+                const char* parent = get_path_from_wd(event->wd);
                 char fullPath[PATH_MAX];
-                snprintf(fullPath, sizeof(fullPath), "%s/%s", directoryPath, event->name);
-                if (IsExcluded(fullPath)) {
-    			i += EVENT_SIZE + event->len;
-    			continue;
-			}
-                printf("[+] Change detected in file: %s\n", fullPath);
-		
-                struct stat st;
-                if (stat(fullPath, &st) == 0 && S_ISDIR(st.st_mode)) {
-                    printf("[+] New directory detected, adding watch: %s\n", fullPath);
-                    AddWatchRecursively(fd, fullPath);
-                }
+                snprintf(fullPath, sizeof(fullPath), "%s/%s", parent ? parent : directoryPath, event->name);
 
-                fflush(stdout);
-if (!IsExcluded(fullPath)) 
-                CallDetectionEngine(fullPath);
+                if (!IsExcluded(fullPath)) {
+                    struct stat st;
+                    if (stat(fullPath, &st) == 0) {
+                        if (S_ISDIR(st.st_mode)) {
+                            if (event->mask & (IN_CREATE | IN_MOVED_TO))
+                                AddWatchRecursively(fd, fullPath);
+                        } else {
+                            printf("[+] Event detected: %s\n", fullPath);
+                            CallDetectionEngine(fullPath);
+                        }
+                    }
+                }
             }
             i += EVENT_SIZE + event->len;
         }
     }
-
-    close(fd);
-    free(directoryPath);
     return NULL;
 }
 
 int main(int argc, char* argv[]) {
-    if (argc < 2) {
-        printf("Usage: %s <directory1> [directory2] [...]\n", argv[0]);
-        return 1;
-    }
-LoadExceptions(); //S15
-printf("[+] %d exclusions loaded\n", exCount); //S15
+    if (argc < 2) return 1;
+    sem_init(&thread_sem, 0, MAX_THREADS);
+    LoadExceptions();
 
     for (int i = 1; i < argc; i++) {
-
-
-        pthread_t thread_id;
-        char* dir = strdup(argv[i]);
-        if (pthread_create(&thread_id, NULL, MonitorDirectoryThread, dir) != 0) {
-            fprintf(stderr, "[-] Failed to create thread for: %s\n", argv[i]);
-            free(dir);
-        }
-        pthread_detach(thread_id);  // detach thread to avoid memory leaks
+        pthread_t tid;
+        pthread_create(&tid, NULL, MonitorDirectoryThread, strdup(argv[i]));
+        pthread_detach(tid);
     }
 
-    printf("Press 'q' followed by Enter to exit...\n");
-    char userInput;
-    do {
-        userInput = getchar();
-    } while (userInput != 'q');
-
+    printf("RTM Running. Press 'q' to quit.\n");
+    while (getchar() != 'q');
     return 0;
 }
