@@ -43,44 +43,79 @@ void scanFile(const char* filePath, YR_RULES** rules_list, int rules_count, Matc
     }
 }
 
-void scanDirectoryRecursively(const char* dirPath, YR_RULES** rules_list, int rules_count, MatchList* matchList) {
-    // FIX 2: Guard against scanning into the rules directory
-    char real_dir[PATH_MAX];
-    if (realpath(dirPath, real_dir) != NULL) {
-        if (strncmp(real_dir, g_rules_realpath, strlen(g_rules_realpath)) == 0) {
-            printf("[!] Skipping rules directory: %s\n", dirPath);
-            return;
+typedef struct {
+    char path[PATH_MAX];
+} PathNode;
+
+void scanDirectoryRecursively(const char* rootPath,
+                              YR_RULES** rules_list,
+                              int rules_count,
+                              MatchList* matchList)
+{
+    PathNode stack[10000];
+    int top = 0;
+
+    strncpy(stack[top++].path, rootPath, PATH_MAX - 1);
+
+    while (top > 0) {
+
+        PathNode current = stack[--top];
+
+        DIR* dir = opendir(current.path);
+        if (!dir) continue;
+
+        struct dirent* entry;
+        char fullPath[PATH_MAX];
+
+        while ((entry = readdir(dir)) != NULL) {
+
+            if (strcmp(entry->d_name, ".") == 0 ||
+                strcmp(entry->d_name, "..") == 0)
+                continue;
+
+            snprintf(fullPath, sizeof(fullPath), "%s/%s",
+                     current.path, entry->d_name);
+
+            struct stat st;
+
+            // lstat prevents following symlinks
+            if (lstat(fullPath, &st) != 0)
+                continue;
+
+            //  BLOCK symlinks completely (prevents escape)
+            if (S_ISLNK(st.st_mode))
+                continue;
+
+            // DIRECTORY → push to stack (DFS)
+            if (S_ISDIR(st.st_mode)) {
+
+                if (top < 9999) {
+                    strncpy(stack[top++].path, fullPath, PATH_MAX - 1);
+                    stack[top - 1].path[PATH_MAX - 1] = '\0';
+                }
+            }
+
+            // FILE → scan immediately
+            else if (S_ISREG(st.st_mode)) {
+
+                MatchList localMatch = {.count = 0};
+
+                scanFile(fullPath, rules_list, rules_count, &localMatch);
+
+                if (localMatch.count > 0) {
+
+                    printf("❌ Infected: %s\n", fullPath);
+
+                    CallQuarantine(fullPath, &localMatch);
+
+                    for (int i = 0; i < localMatch.count; i++)
+                        free(localMatch.matches[i]);
+                }
+            }
         }
+
+        closedir(dir);
     }
-
-    DIR* dir = opendir(dirPath);
-    if (!dir) {
-        perror("[-] Failed to open directory");
-        return;
-    }
-
-    struct dirent* entry;
-    char path[BUFFER_SIZE];
-
-    while ((entry = readdir(dir)) != NULL) {
-        if (strcmp(entry->d_name, ".") == 0 || strcmp(entry->d_name, "..") == 0)
-            continue;
-
-        snprintf(path, sizeof(path), "%s/%s", dirPath, entry->d_name);
-
-        struct stat path_stat;
-        // FIX 1: Check stat() return value — skip on failure (broken symlinks, permission denied, etc.)
-        if (stat(path, &path_stat) != 0)
-            continue;
-
-        if (S_ISDIR(path_stat.st_mode)) {
-            scanDirectoryRecursively(path, rules_list, rules_count, matchList);
-        } else if (S_ISREG(path_stat.st_mode)) {
-            scanFile(path, rules_list, rules_count, matchList);
-        }
-    }
-
-    closedir(dir);
 }
 
 void CallQuarantine(const char* filePath, MatchList* matchList) {
