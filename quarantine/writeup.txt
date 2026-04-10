@@ -1,0 +1,45 @@
+**Lightweight Keystream-Based Quarantine Encryption in an Antivirus System**
+
+**Introduction**
+
+When people think about antivirus software, they usually think about detection — does it catch the virus or not. What gets less attention is what happens after detection. Once a file is flagged, it needs to go somewhere safe. That somewhere is quarantine, and quarantine is harder to get right than it sounds. The file needs to be encrypted so it can't run, but also preserved so it can be recovered if it was a false positive. It needs to be protected from the malware itself, which might try to restore itself if it detects it has been isolated. And all of this has to happen fast, in the background, without slowing down the system.
+
+For a large commercial product running on powerful hardware, you just use AES and call it a day. But Black Swan is designed to be lightweight and run in real time alongside an inotify monitor and a threaded YARA engine. Pulling in a full AES implementation for quarantine felt like overkill for what the threat model actually requires. Instead, the quarantine module uses a keystream-based XOR cipher built along the same lines as ChaCha20, simplified for this specific use case, combined with a file-splitting approach that adds a structural layer of protection on top of the encryption.
+
+**ChaCha20 and Why It Matters**
+
+ChaCha20 was introduced by Bernstein in 2008 as a variant of his earlier Salsa20 design. The basic idea is straightforward: generate a pseudorandom stream of bytes from a key, a nonce, and a counter, then XOR that stream against the data you want to encrypt. Because XOR is symmetric, you decrypt by doing the exact same thing with the same key and nonce. No separate decrypt function needed.
+
+What made Salsa20 and ChaCha20 interesting when they came out was performance. AES in software, without hardware acceleration, is expensive. ChaCha20 is fast on any general-purpose CPU because it only uses addition, XOR, and bit rotation — no lookup tables, no complex key scheduling. Bernstein's original Salsa20 paper from 2005 laid out the security argument for this family of ciphers, and ChaCha20 has since been adopted in TLS 1.3 and WireGuard, which gives it serious real-world credibility. The security comes from the fact that the keystream looks statistically random to anyone who doesn't know the key, so XORing data against it produces ciphertext that reveals nothing about the original.
+
+The nonce is particularly important in ChaCha20's design. It exists to ensure that even if the same key is used to encrypt two different files, the keystream generated for each is completely different. Reusing a key with the same nonce in a stream cipher is a catastrophic mistake — an attacker who has two ciphertexts encrypted with the same keystream can XOR them together and cancel the encryption entirely, working with the XOR of two plaintexts instead. ChaCha20 prevents this by making the nonce an explicit input that changes the entire output. This principle carries directly into the quarantine module's design.
+
+**How the Module Simplifies This**
+
+Full ChaCha20 uses a 256-bit key, a 96-bit nonce, twenty mixing rounds on a 4×4 word matrix, and is built to resist attacks from well-resourced adversaries. That level of security is genuinely necessary when protecting data in transit or at rest against serious attackers. The quarantine use case is different. The adversary here is most likely an automated malware sample trying to restore itself — not someone running cryptanalysis. The module therefore uses a stripped-down construction that keeps the important properties of ChaCha20 while dropping the complexity that isn't needed here.
+
+The master key is five bytes, mixed into a 32-bit state using byte-shifted XOR across each character. A 7-digit nonce is generated fresh for every file using the current time XORed with the process ID, which ensures that two identical files quarantined at different moments produce completely different ciphertext. The byte position within the file acts as the counter. The state is then run through three rounds of xorshift mixing and multiplied by 0x9e3779b9 — the golden ratio constant commonly used in hash functions to improve bit distribution. The bottom eight bits of the result become the keystream byte for that position. Encryption and decryption are the same function, same as ChaCha20.
+
+**PRNG-Based Keystream Generation: Inspired by ChaCha20 but Distinct**
+
+It is worth being precise about where this module follows ChaCha20 and where it deliberately diverges. ChaCha20 is a cryptographically secure stream cipher. Its keystream is generated through a series of well-analysed quarter-round operations on a full 512-bit state block, and its security has been formally studied and peer reviewed over many years. The module described here does not claim cryptographic strength in that sense.
+
+What it uses instead is a PRNG-style keystream function — a deterministic function that takes the master key, the nonce, and the byte counter as inputs and produces a single output byte. Each byte position in the file gets its own independent computation. There is no internal state carried between positions; the function is stateless and positional. This is actually a stronger property than a traditional stream cipher from a parallelism standpoint — any byte can be computed independently — but it means the security argument is different. The construction is not built to resist differential cryptanalysis or algebraic attacks. It is built to ensure that without the key and nonce together, the output is unpredictable enough to defeat automated restoration attempts, which is the actual threat.
+
+The nonce generation uses `time(NULL) XOR getpid()`, seeded into the standard PRNG. This is not cryptographically random but it is non-deterministic from the perspective of an external process. A malware sample running concurrently cannot predict what nonce value will be generated because it does not know exactly when the quarantine function will execute or what the process ID of the engine will be at that moment. The nonce is never stored anywhere except the log file, and the log file is locked append-only. So even if a malware sample knows the algorithm — which it would if it had access to this binary — it still cannot reconstruct the keystream without reading the log, and reading the log only gives it the nonce, not the key.
+
+**How the Full System Works**
+
+When the engine flags a file, the quarantine module reads it entirely into memory, generates the nonce, and runs the XOR encryption across every byte. Then it splits the encrypted data into two equal parts and writes each as a separate file in the quarantine directory, named after the timestamp. The original file is deleted. The nonce, original filename, part filenames, and the YARA rule that matched are all written to a log file that can be locked with `chattr +a` to make it append-only at the filesystem level.
+
+The split is deliberately simple but it solves a real problem. Malware that detects it has been quarantined and goes looking for its own file in the quarantine directory will find two partial blobs of ciphertext. It does not have the nonce, it does not have the key, and it does not even have a complete file to work with. Restoring from that state requires all three things simultaneously. The log file being append-only means it cannot be wiped without manual intervention to first remove the immutability flag, which is not something an automated process can quietly do.
+
+Recovery for legitimate use is handled by a separate restore tool, which prompts for the master key, reads the log to find the nonce and part locations, reassembles the two parts in order, and runs the same XOR function to recover the original file.
+
+**Conclusion**
+
+The quarantine module ended up being one of the more interesting parts of the project to design. The encryption itself is not novel — it is a deliberate simplification of an established and well-respected design — but applying it in a way that also accounts for malware actively trying to undo the quarantine required thinking about the problem differently than just encrypting a file and moving on. The file splitting came out of asking what an automated restore attempt would actually look like and what structural obstacle would stop it cold. The PRNG-based keystream, while not a cryptographic primitive in the formal sense, is well matched to the threat model: it is fast, stateless, nonce-dependent, and impossible to reverse without the key. For the performance constraints and real-world requirements of a lightweight antivirus system, this design covers what it needs to cover without unnecessary overhead or external dependencies.
+
+---
+
+*References: Bernstein (2005), Bernstein (2008) — cite in your institution's required format.*
