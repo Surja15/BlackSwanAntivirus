@@ -30,6 +30,19 @@ typedef struct {
 WatchMap watch_list[MAX_WATCHES];
 int watch_count = 0;
 
+// --- Safe path printer (avoids non-UTF-8 bytes crashing Python GUI) ---
+
+void print_safe_path(const char* path) {
+    for (const char* p = path; *p; p++) {
+        if ((unsigned char)*p >= 0x20 && (unsigned char)*p < 0x7F)
+            putchar(*p);
+        else
+            printf("\\x%02x", (unsigned char)*p);
+    }
+    putchar('\n');
+    fflush(stdout);
+}
+
 // --- Helper Functions ---
 
 void LoadExceptions() {
@@ -47,6 +60,7 @@ void add_to_map(int wd, const char* path) {
     if (watch_count < MAX_WATCHES) {
         watch_list[watch_count].wd = wd;
         strncpy(watch_list[watch_count].path, path, PATH_MAX - 1);
+        watch_list[watch_count].path[PATH_MAX - 1] = '\0';
         watch_count++;
     }
     pthread_mutex_unlock(&map_mutex);
@@ -76,19 +90,26 @@ bool IsExcluded(const char* path) {
 
 // --- Engine Execution ---
 
-struct ScanArgs {
+typedef struct {
     char filePath[PATH_MAX];
-};
+} ScanArgs;
 
 void* ScanThread(void* arg) {
-    struct ScanArgs* data = (struct ScanArgs*)arg;
+    ScanArgs* data = (ScanArgs*)arg;
     pid_t pid = fork();
     if (pid == 0) {
-        execl("/home/surja/Downloads/Black-Swan-main/engine", "engine", data->filePath, (char *)NULL);
+        // Redirect engine stdout/stderr to /dev/null to avoid mixing with RTM output
+        freopen("/dev/null", "w", stdout);
+        freopen("/dev/null", "w", stderr);
+        execl("/home/surja/Downloads/Black-Swan-main/engine", "engine", data->filePath, (char*)NULL);
         perror("execl failed");
         exit(1);
     } else if (pid > 0) {
         waitpid(pid, NULL, 0);
+        printf("[+] Scan complete: ");
+        print_safe_path(data->filePath);
+    } else {
+        perror("fork failed");
     }
     free(data);
     sem_post(&thread_sem);
@@ -97,15 +118,22 @@ void* ScanThread(void* arg) {
 
 void CallDetectionEngine(const char* filePath) {
     if (IsExcluded(filePath)) return;
-    
-    struct ScanArgs* args = malloc(sizeof(struct ScanArgs));
+
+    ScanArgs* args = malloc(sizeof(ScanArgs));
+    if (!args) {
+        fprintf(stderr, "[-] malloc failed for ScanArgs\n");
+        fflush(stderr);
+        return;
+    }
     strncpy(args->filePath, filePath, PATH_MAX - 1);
+    args->filePath[PATH_MAX - 1] = '\0';
 
     sem_wait(&thread_sem);
     pthread_t scanThread;
     if (pthread_create(&scanThread, NULL, ScanThread, args) == 0) {
         pthread_detach(scanThread);
     } else {
+        perror("pthread_create failed");
         free(args);
         sem_post(&thread_sem);
     }
@@ -116,9 +144,11 @@ void CallDetectionEngine(const char* filePath) {
 void AddWatchRecursively(int fd, const char* basePath) {
     if (IsExcluded(basePath)) return;
 
-    // IN_CLOSE_WRITE is the gold standard for finished file writes
     int wd = inotify_add_watch(fd, basePath, IN_CREATE | IN_CLOSE_WRITE | IN_MOVED_TO);
-    if (wd < 0) return;
+    if (wd < 0) {
+        // Don't print error for every inaccessible dir — too noisy
+        return;
+    }
 
     add_to_map(wd, basePath);
 
@@ -128,9 +158,10 @@ void AddWatchRecursively(int fd, const char* basePath) {
     struct dirent* entry;
     while ((entry = readdir(dir)) != NULL) {
         if (entry->d_name[0] == '.') continue;
+
         char path[PATH_MAX];
         snprintf(path, sizeof(path), "%s/%s", basePath, entry->d_name);
-        
+
         struct stat st;
         if (stat(path, &st) == 0 && S_ISDIR(st.st_mode)) {
             AddWatchRecursively(fd, path);
@@ -141,24 +172,41 @@ void AddWatchRecursively(int fd, const char* basePath) {
 
 void* MonitorDirectoryThread(void* arg) {
     char* directoryPath = (char*)arg;
+
     int fd = inotify_init();
-    if (fd < 0) { perror("inotify_init"); return NULL; }
+    if (fd < 0) {
+        perror("inotify_init");
+        free(directoryPath);
+        return NULL;
+    }
 
     AddWatchRecursively(fd, directoryPath);
+
     printf("[+] Monitoring: %s\n", directoryPath);
+    fflush(stdout);
 
     char buffer[BUF_LEN];
     while (1) {
         ssize_t length = read(fd, buffer, BUF_LEN);
-        if (length < 0) break;
+        if (length < 0) {
+            if (errno == EINTR) continue;  // interrupted by signal, retry
+            perror("read inotify");
+            break;
+        }
 
         ssize_t i = 0;
         while (i < length) {
-            struct inotify_event *event = (struct inotify_event *)&buffer[i];
+            struct inotify_event* event = (struct inotify_event*)&buffer[i];
+
             if (event->len > 0) {
                 const char* parent = get_path_from_wd(event->wd);
+                if (!parent) {
+                    i += EVENT_SIZE + event->len;
+                    continue;
+                }
+
                 char fullPath[PATH_MAX];
-                snprintf(fullPath, sizeof(fullPath), "%s/%s", parent ? parent : directoryPath, event->name);
+                snprintf(fullPath, sizeof(fullPath), "%s/%s", parent, event->name);
 
                 if (!IsExcluded(fullPath)) {
                     struct stat st;
@@ -166,31 +214,60 @@ void* MonitorDirectoryThread(void* arg) {
                         if (S_ISDIR(st.st_mode)) {
                             if (event->mask & (IN_CREATE | IN_MOVED_TO))
                                 AddWatchRecursively(fd, fullPath);
-                        } else {
-                            printf("[+] Event detected: %s\n", fullPath);
+                        } else if (S_ISREG(st.st_mode)) {
+                            printf("[+] Event detected: ");
+                            print_safe_path(fullPath);
                             CallDetectionEngine(fullPath);
                         }
                     }
                 }
             }
+
             i += EVENT_SIZE + event->len;
         }
     }
+
+    close(fd);
+    free(directoryPath);
     return NULL;
 }
 
+// --- Main ---
+
 int main(int argc, char* argv[]) {
-    if (argc < 2) return 1;
+    if (argc < 2) {
+        fprintf(stderr, "Usage: %s <directory1> [directory2] ...\n", argv[0]);
+        return 1;
+    }
+
+    // Disable stdout buffering so GUI gets output immediately
+    setvbuf(stdout, NULL, _IONBF, 0);
+
     sem_init(&thread_sem, 0, MAX_THREADS);
     LoadExceptions();
 
     for (int i = 1; i < argc; i++) {
         pthread_t tid;
-        pthread_create(&tid, NULL, MonitorDirectoryThread, strdup(argv[i]));
-        pthread_detach(tid);
+        char* path_copy = strdup(argv[i]);
+        if (!path_copy) {
+            fprintf(stderr, "[-] strdup failed\n");
+            continue;
+        }
+        if (pthread_create(&tid, NULL, MonitorDirectoryThread, path_copy) != 0) {
+            perror("pthread_create for monitor thread");
+            free(path_copy);
+        } else {
+            pthread_detach(tid);
+        }
     }
 
     printf("RTM Running. Press 'q' to quit.\n");
-    while (getchar() != 'q');
+    fflush(stdout);
+
+    // Wait for 'q' on stdin — GUI can send it via process_rtm.stdin.write('q\n')
+    int c;
+    while ((c = getchar()) != EOF && c != 'q');
+
+    sem_destroy(&thread_sem);
     return 0;
 }
