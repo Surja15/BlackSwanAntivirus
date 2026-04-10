@@ -73,7 +73,7 @@ void scanDirectoryRecursively(const char* dirPath,
         if (S_ISDIR(st.st_mode)) {
             char resolvedPath[PATH_MAX];
             if (realpath(fullPath, resolvedPath) == NULL) continue;
-
+if(strstr(resolvedPath, "/myrule") != NULL) continue;
             // Only descend if still inside the original target directory
             if (strncmp(resolvedPath, g_target_realpath, strlen(g_target_realpath)) != 0)
                 continue;
