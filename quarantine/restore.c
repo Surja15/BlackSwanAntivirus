@@ -1,4 +1,4 @@
-// restore.c
+// restore.c doesnt work
 // Standalone restore tool for Black Swan AV quarantine
 // Compile: gcc restore.c -o restore
 // Usage:   ./restore <original_filename> <7-digit-nonce>
