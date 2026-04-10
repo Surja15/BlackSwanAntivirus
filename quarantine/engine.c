@@ -10,7 +10,7 @@
 #include <unistd.h>
 
 int quarantine_file(const char* file_path, const char* matched_rules);
-
+int done = 0;
 #define PATH_SEPARATOR '/'
 #define BUFFER_SIZE 1024
 #define MAX_MATCHES 100
@@ -94,8 +94,13 @@ char* popQueue()
 {
     pthread_mutex_lock(&queue.lock);
 
-    while (queue.count == 0)
-        pthread_cond_wait(&queue.cond, &queue.lock);
+    while (queue.count == 0 && !done)
+    pthread_cond_wait(&queue.cond, &queue.lock);
+
+if (queue.count == 0 && done) {
+    pthread_mutex_unlock(&queue.lock);
+    return NULL;
+}
 
     char* item = queue.items[queue.front];
     queue.front = (queue.front + 1) % QUEUE_MAX;
@@ -112,7 +117,7 @@ void* workerThread(void* arg)
     while (1)
     {
         char* filePath = popQueue();
-        if (!filePath) continue;
+if (!filePath) break;   // exit thread cleanly
 
         struct stat st;
         if (stat(filePath, &st) == 0 && S_ISREG(st.st_mode))
@@ -120,7 +125,7 @@ void* workerThread(void* arg)
             MatchList localMatch = {.count = 0};
 
             scanFile(filePath, g_rules_list, g_rules_count, &localMatch);
-
+usleep(1000);
             if (localMatch.count > 0) {
                 printf("❌ Infected: %s\n", filePath);
                 CallQuarantine(filePath, &localMatch);
@@ -282,7 +287,8 @@ int main(int argc, char* argv[])
     } else {
         printf("[-] Unknown target type.\n");
     }
-
+done = 1;
+pthread_cond_broadcast(&queue.cond);
     // -------- WAIT (IMPORTANT) --------
     pthread_join(worker, NULL);
 
