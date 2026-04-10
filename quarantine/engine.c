@@ -18,9 +18,11 @@ typedef struct {
     char* matches[MAX_MATCHES];
     int count;
 } MatchList;
+
 void CallQuarantine(const char* filePath, MatchList* matchList);
-// Resolved real path of rules dir — set once in main, used as guard
+
 static char g_rules_realpath[PATH_MAX] = {0};
+static char g_target_realpath[PATH_MAX] = {0};  // NEW: target boundary guard
 
 int scanCallback(YR_SCAN_CONTEXT* context, int message, void* message_data, void* user_data) {
     MatchList* matchList = (MatchList*)user_data;
@@ -36,16 +38,11 @@ int scanCallback(YR_SCAN_CONTEXT* context, int message, void* message_data, void
     return CALLBACK_CONTINUE;
 }
 
-// Scan a single file against ALL preloaded rules in one pass
 void scanFile(const char* filePath, YR_RULES** rules_list, int rules_count, MatchList* matchList) {
     for (int i = 0; i < rules_count; i++) {
         yr_rules_scan_file(rules_list[i], filePath, SCAN_FLAGS_REPORT_RULES_MATCHING, scanCallback, matchList, 0);
     }
 }
-
-typedef struct {
-    char path[PATH_MAX];
-} PathNode;
 
 void scanDirectoryRecursively(const char* dirPath,
                               YR_RULES** rules_list,
@@ -70,12 +67,17 @@ void scanDirectoryRecursively(const char* dirPath,
         if (lstat(fullPath, &st) != 0)
             continue;
 
-        // Block symlinks
         if (S_ISLNK(st.st_mode))
             continue;
 
         if (S_ISDIR(st.st_mode)) {
-            // Recurse into subdirectory
+            char resolvedPath[PATH_MAX];
+            if (realpath(fullPath, resolvedPath) == NULL) continue;
+
+            // Only descend if still inside the original target directory
+            if (strncmp(resolvedPath, g_target_realpath, strlen(g_target_realpath)) != 0)
+                continue;
+
             scanDirectoryRecursively(fullPath, rules_list, rules_count, matchList);
         }
         else if (S_ISREG(st.st_mode)) {
@@ -93,6 +95,7 @@ void scanDirectoryRecursively(const char* dirPath,
 
     closedir(dir);
 }
+
 void CallQuarantine(const char* filePath, MatchList* matchList) {
     char rules_str[1024] = "";
     for (int i = 0; i < matchList->count; i++) {
@@ -113,9 +116,15 @@ int main(int argc, char* argv[]) {
     const char* rules_dir = "/home/surja/Downloads/Black-Swan-main/myrule/compiled/";
     const char* target_path = argv[1];
 
-    // Resolve rules dir real path once for the guard check
+    // Resolve rules dir real path
     if (realpath(rules_dir, g_rules_realpath) == NULL) {
         perror("[-] Failed to resolve rules directory path");
+        return 1;
+    }
+
+    // Resolve target real path — scanner will never leave this boundary
+    if (realpath(target_path, g_target_realpath) == NULL) {
+        perror("[-] Failed to resolve target path");
         return 1;
     }
 
@@ -124,8 +133,6 @@ int main(int argc, char* argv[]) {
         return 1;
     }
 
-    // FIX 3: Load ALL rule files first into an array, then scan — 
-    // instead of looping files × rules (N×M passes), do 1 pass per file against all rules
     YR_RULES* rules_list[MAX_RULES];
     int rules_count = 0;
 
@@ -172,7 +179,6 @@ int main(int argc, char* argv[]) {
         printf("[-] Unknown target type.\n");
     }
 
-    // Cleanup all loaded rules
     for (int i = 0; i < rules_count; i++)
         yr_rules_destroy(rules_list[i]);
 
