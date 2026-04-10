@@ -1,4 +1,3 @@
-//Engine code directory doesnt work//
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
@@ -9,18 +8,23 @@
 
 int quarantine_file(const char* file_path, const char* matched_rules);
 
-
 #define PATH_SEPARATOR '/'
 #define BUFFER_SIZE 1024
 #define MAX_MATCHES 100
-#define MAX_RULES 512
+#define MAX_RULES 64
+#define MAX_STACK_DEPTH 10000
 
 typedef struct {
     char* matches[MAX_MATCHES];
     int count;
 } MatchList;
+
+typedef struct {
+    char path[PATH_MAX];
+} PathNode;
+
 void CallQuarantine(const char* filePath, MatchList* matchList);
-// Resolved real path of rules dir — set once in main, used as guard
+
 static char g_rules_realpath[PATH_MAX] = {0};
 
 int scanCallback(YR_SCAN_CONTEXT* context, int message, void* message_data, void* user_data) {
@@ -37,63 +41,82 @@ int scanCallback(YR_SCAN_CONTEXT* context, int message, void* message_data, void
     return CALLBACK_CONTINUE;
 }
 
-// Scan a single file against ALL preloaded rules in one pass
 void scanFile(const char* filePath, YR_RULES** rules_list, int rules_count, MatchList* matchList) {
     for (int i = 0; i < rules_count; i++) {
         yr_rules_scan_file(rules_list[i], filePath, SCAN_FLAGS_REPORT_RULES_MATCHING, scanCallback, matchList, 0);
     }
 }
 
-void scanDirectoryRecursively(const char* dirPath, YR_RULES** rules_list, int rules_count, MatchList* matchList) {
-    // FIX 2: Guard against scanning into the rules directory
-    char real_dir[PATH_MAX];
-    if (realpath(dirPath, real_dir) != NULL) {
-        if (strncmp(real_dir, g_rules_realpath, strlen(g_rules_realpath)) == 0) {
-            printf("[!] Skipping rules directory: %s\n", dirPath);
-            return;
-        }
-    }
-
-    DIR* dir = opendir(dirPath);
-    if (!dir) {
-        perror("[-] Failed to open directory");
+void scanDirectoryRecursively(const char* rootPath,
+                              YR_RULES** rules_list,
+                              int rules_count)
+{
+    // Heap-allocated stack — avoids ~40MB stack overflow from PathNode stack[10000] on call stack
+    PathNode* stack = malloc(MAX_STACK_DEPTH * sizeof(PathNode));
+    if (!stack) {
+        fprintf(stderr, "[-] Out of memory allocating directory scan stack\n");
         return;
     }
 
-    struct dirent* entry;
-    char path[BUFFER_SIZE];
+    int top = 0;
+    strncpy(stack[top].path, rootPath, PATH_MAX - 1);
+    stack[top].path[PATH_MAX - 1] = '\0';
+    top++;
 
-    while ((entry = readdir(dir)) != NULL) {
-        if (strcmp(entry->d_name, ".") == 0 || strcmp(entry->d_name, "..") == 0)
-            continue;
+    while (top > 0) {
+        PathNode current = stack[--top];
 
-        snprintf(path, sizeof(path), "%s/%s", dirPath, entry->d_name);
+        DIR* dir = opendir(current.path);
+        if (!dir) continue;
 
-        struct stat path_stat;
-        // FIX 1: Check stat() return value — skip on failure (broken symlinks, permission denied, etc.)
-        if (stat(path, &path_stat) != 0)
-            continue;
+        struct dirent* entry;
+        char fullPath[PATH_MAX];
 
-        if (S_ISDIR(path_stat.st_mode)) {
-            scanDirectoryRecursively(path, rules_list, rules_count, matchList);
-        } else if (S_ISREG(path_stat.st_mode)) {
-    MatchList localMatch = {.count = 0};
+        while ((entry = readdir(dir)) != NULL) {
+            if (strcmp(entry->d_name, ".") == 0 ||
+                strcmp(entry->d_name, "..") == 0)
+                continue;
 
-    scanFile(path, rules_list, rules_count, &localMatch);
+            snprintf(fullPath, sizeof(fullPath), "%s/%s",
+                     current.path, entry->d_name);
 
-    if (localMatch.count > 0) {
-        for (int i = 0; i < localMatch.count; i++)
-            printf("✅ %s matched rule: %s\n", path, localMatch.matches[i]);
+            struct stat st;
 
-        CallQuarantine(path, &localMatch);
+            // lstat prevents following symlinks
+            if (lstat(fullPath, &st) != 0)
+                continue;
 
-        for (int i = 0; i < localMatch.count; i++)
-            free(localMatch.matches[i]);
+            // Block symlinks completely
+            if (S_ISLNK(st.st_mode))
+                continue;
+
+            if (S_ISDIR(st.st_mode)) {
+                if (top < MAX_STACK_DEPTH - 1) {
+                    strncpy(stack[top].path, fullPath, PATH_MAX - 1);
+                    stack[top].path[PATH_MAX - 1] = '\0';
+                    top++;
+                } else {
+                    fprintf(stderr, "[-] Directory stack full, skipping: %s\n", fullPath);
+                }
+            } else if (S_ISREG(st.st_mode)) {
+                MatchList localMatch = {.count = 0};
+
+                scanFile(fullPath, rules_list, rules_count, &localMatch);
+
+                if (localMatch.count > 0) {
+                    printf("❌ Infected: %s\n", fullPath);
+                    CallQuarantine(fullPath, &localMatch);
+
+                    for (int i = 0; i < localMatch.count; i++)
+                        free(localMatch.matches[i]);
+                }
+            }
+        }
+
+        closedir(dir);
     }
-}
-    }
 
-    closedir(dir);
+    free(stack);
 }
 
 void CallQuarantine(const char* filePath, MatchList* matchList) {
@@ -116,7 +139,6 @@ int main(int argc, char* argv[]) {
     const char* rules_dir = "/home/surja/Downloads/Black-Swan-main/myrule/compiled/";
     const char* target_path = argv[1];
 
-    // Resolve rules dir real path once for the guard check
     if (realpath(rules_dir, g_rules_realpath) == NULL) {
         perror("[-] Failed to resolve rules directory path");
         return 1;
@@ -127,8 +149,6 @@ int main(int argc, char* argv[]) {
         return 1;
     }
 
-    // FIX 3: Load ALL rule files first into an array, then scan — 
-    // instead of looping files × rules (N×M passes), do 1 pass per file against all rules
     YR_RULES* rules_list[MAX_RULES];
     int rules_count = 0;
 
@@ -162,15 +182,26 @@ int main(int argc, char* argv[]) {
 
     printf("[+] Loaded %d rule file(s). Scanning: %s\n", rules_count, target_path);
 
-    MatchList matchList = {.count = 0};
-
     struct stat path_stat;
     if (stat(target_path, &path_stat) != 0) {
         perror("[-] Failed to stat target path");
     } else if (S_ISREG(path_stat.st_mode)) {
+        // Single file scan
+        MatchList matchList = {.count = 0};
         scanFile(target_path, rules_list, rules_count, &matchList);
+
+        if (matchList.count > 0) {
+            printf("❌ Infected: %s\n", target_path);
+            CallQuarantine(target_path, &matchList);
+            for (int i = 0; i < matchList.count; i++)
+                free(matchList.matches[i]);
+        } else {
+            printf("[+] No threats found in: %s\n", target_path);
+        }
     } else if (S_ISDIR(path_stat.st_mode)) {
-        scanDirectoryRecursively(target_path, rules_list, rules_count, &matchList);
+        // Directory scan — each infected file is quarantined individually inside the function
+        scanDirectoryRecursively(target_path, rules_list, rules_count);
+        printf("[+] Directory scan complete: %s\n", target_path);
     } else {
         printf("[-] Unknown target type.\n");
     }
@@ -178,8 +209,6 @@ int main(int argc, char* argv[]) {
     // Cleanup all loaded rules
     for (int i = 0; i < rules_count; i++)
         yr_rules_destroy(rules_list[i]);
-
-    
 
     yr_finalize();
     return 0;
