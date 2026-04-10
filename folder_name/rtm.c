@@ -96,21 +96,51 @@ typedef struct {
 
 void* ScanThread(void* arg) {
     ScanArgs* data = (ScanArgs*)arg;
+
+    int pipefd[2];
+    if (pipe(pipefd) < 0) {
+        perror("pipe failed");
+        free(data);
+        sem_post(&thread_sem);
+        return NULL;
+    }
+
     pid_t pid = fork();
     if (pid == 0) {
-        // Redirect engine stdout/stderr to /dev/null to avoid mixing with RTM output
-        freopen("/dev/null", "w", stdout);
-        freopen("/dev/null", "w", stderr);
+        // Child: redirect engine stdout+stderr into pipe
+        close(pipefd[0]);
+        dup2(pipefd[1], STDOUT_FILENO);
+        dup2(pipefd[1], STDERR_FILENO);
+        close(pipefd[1]);
         execl("/home/surja/Downloads/Black-Swan-main/engine", "engine", data->filePath, (char*)NULL);
         perror("execl failed");
         exit(1);
     } else if (pid > 0) {
+        // Parent: read engine output line by line and forward to RTM stdout
+        close(pipefd[1]);
+        char line[4096];
+        FILE* engine_out = fdopen(pipefd[0], "r");
+        if (engine_out) {
+            while (fgets(line, sizeof(line), engine_out)) {
+                // Sanitize non-UTF-8 bytes before forwarding to GUI
+                for (char* p = line; *p; p++) {
+                    if ((unsigned char)*p < 0x20 && *p != '\n' && *p != '\t')
+                        *p = '?';
+                }
+                printf("%s", line);
+                fflush(stdout);
+            }
+            fclose(engine_out);
+        } else {
+            close(pipefd[0]);
+        }
         waitpid(pid, NULL, 0);
-        printf("[+] Scan complete: ");
-        print_safe_path(data->filePath);
     } else {
         perror("fork failed");
+        close(pipefd[0]);
+        close(pipefd[1]);
     }
+
     free(data);
     sem_post(&thread_sem);
     return NULL;
@@ -145,10 +175,7 @@ void AddWatchRecursively(int fd, const char* basePath) {
     if (IsExcluded(basePath)) return;
 
     int wd = inotify_add_watch(fd, basePath, IN_CREATE | IN_CLOSE_WRITE | IN_MOVED_TO);
-    if (wd < 0) {
-        // Don't print error for every inaccessible dir — too noisy
-        return;
-    }
+    if (wd < 0) return;
 
     add_to_map(wd, basePath);
 
@@ -189,7 +216,7 @@ void* MonitorDirectoryThread(void* arg) {
     while (1) {
         ssize_t length = read(fd, buffer, BUF_LEN);
         if (length < 0) {
-            if (errno == EINTR) continue;  // interrupted by signal, retry
+            if (errno == EINTR) continue;
             perror("read inotify");
             break;
         }
@@ -240,7 +267,6 @@ int main(int argc, char* argv[]) {
         return 1;
     }
 
-    // Disable stdout buffering so GUI gets output immediately
     setvbuf(stdout, NULL, _IONBF, 0);
 
     sem_init(&thread_sem, 0, MAX_THREADS);
@@ -264,7 +290,6 @@ int main(int argc, char* argv[]) {
     printf("RTM Running. Press 'q' to quit.\n");
     fflush(stdout);
 
-    // Wait for 'q' on stdin — GUI can send it via process_rtm.stdin.write('q\n')
     int c;
     while ((c = getchar()) != EOF && c != 'q');
 
