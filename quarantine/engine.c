@@ -1,4 +1,4 @@
-//Engine code//
+//Engine code// FINAL S15
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
@@ -73,7 +73,7 @@ void scanDirectoryRecursively(const char* dirPath,
         if (S_ISDIR(st.st_mode)) {
             char resolvedPath[PATH_MAX];
             if (realpath(fullPath, resolvedPath) == NULL) continue;
-if(strstr(resolvedPath, "/myrule") != NULL) continue;
+if(strstr(resolvedPath, "/myrule") != NULL) continue; // so it doesnt eat up the RULES folder. DO NOT REMOVE THIS, or the whole project will be like titanic
             // Only descend if still inside the original target directory
             if (strncmp(resolvedPath, g_target_realpath, strlen(g_target_realpath)) != 0)
                 continue;
