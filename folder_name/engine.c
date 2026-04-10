@@ -203,7 +203,7 @@ int main(int argc, char* argv[]) {
 
     if (matchList.count > 0) {
         for (int i = 0; i < matchList.count; ++i)
-            printf("✅ Matched rule: %s\n", matchList.matches[i]);
+            printf("Matched rule: %s\n", matchList.matches[i]);
 
         CallQuarantine(target_path, &matchList);
 
