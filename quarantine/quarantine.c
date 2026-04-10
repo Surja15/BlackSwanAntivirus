@@ -171,8 +171,8 @@ int quarantine_file(const char* file_path, const char* matched_rules) {
     return 0;
 }
 
-// ─── Restore ───────────────────────────────────────────────────────────────
-int restore_file(const char* filename) {
+// ─── Restore Now handled separately, the following is now redundant, also doesnt work lmao
+/*int restore_file(const char* filename) {
     char password[64];
     printf("Enter master key to restore: ");
     fflush(stdout);
@@ -266,18 +266,18 @@ int restore_file(const char* filename) {
 
     printf("[+] File restored successfully: %s\n", filename);
     return 0;
-}
+}*/
 
 // ─── CLI entry point ────────────────────────────────────────────────────────
 int main(int argc, char* argv[]) {
     if (argc < 3) {
-        printf("Usage: %s <quarantine|restore> <file>\n", argv[0]);
+        printf("Usage: %s <quarantine> <file>\n", argv[0]);
         return 1;
     }
     if (strcmp(argv[1], "quarantine") == 0)
         return quarantine_file(argv[2], NULL);
-    else if (strcmp(argv[1], "restore") == 0)
-        return restore_file(argv[2]);
+    /*else if (strcmp(argv[1], "restore") == 0)
+        return restore_file(argv[2]);*/
     else {
         printf("[-] Unknown action: %s\n", argv[1]);
         return 1;
