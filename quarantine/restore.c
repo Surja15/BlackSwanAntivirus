@@ -42,7 +42,7 @@ int main(int argc, char* argv[]) {
         return 1;
     }
 
-    // 🔐 Ask for master key
+    // Ask for master key
     char password[64];
     printf("Enter master key: ");
     fflush(stdout);
@@ -72,7 +72,7 @@ int main(int argc, char* argv[]) {
     unsigned int nonce = 0;
     int found = 0;
 
-    // 🔍 Find file entry in log
+    // Find file entry in log
     while (fgets(line, sizeof(line), log)) {
         char* entry = strchr(line, ']');
         if (entry) entry += 2;
@@ -109,7 +109,7 @@ int main(int argc, char* argv[]) {
         return 1;
     }
 
-    // 📦 Combine parts
+    // Combine parts
     unsigned char* combined = NULL;
     size_t total = 0;
 
@@ -140,7 +140,7 @@ int main(int argc, char* argv[]) {
 
         combined = temp;
 
-        if (fread(combined + total, 1, size, f) != size) {
+        if (fread(combined + total, 1, size, f) != (size_t)size) {
             printf("[-] Read error\n");
             fclose(f);
             free(combined);
@@ -157,8 +157,8 @@ int main(int argc, char* argv[]) {
         return 1;
     }
 
-    // 🔓 Decrypt
-    xor_keystream_crypt(combined, total, password, nonce);
+    // Decrypt using MASTER_KEY to match quarantine.c exactly
+    xor_keystream_crypt(combined, total, MASTER_KEY, nonce);
 
     FILE* out = fopen(filename, "wb");
     if (!out) {
