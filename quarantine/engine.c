@@ -76,8 +76,20 @@ void scanDirectoryRecursively(const char* dirPath, YR_RULES** rules_list, int ru
         if (S_ISDIR(path_stat.st_mode)) {
             scanDirectoryRecursively(path, rules_list, rules_count, matchList);
         } else if (S_ISREG(path_stat.st_mode)) {
-            scanFile(path, rules_list, rules_count, matchList);
-        }
+    MatchList localMatch = {.count = 0};
+
+    scanFile(path, rules_list, rules_count, &localMatch);
+
+    if (localMatch.count > 0) {
+        for (int i = 0; i < localMatch.count; i++)
+            printf("✅ %s matched rule: %s\n", path, localMatch.matches[i]);
+
+        CallQuarantine(path, &localMatch);
+
+        for (int i = 0; i < localMatch.count; i++)
+            free(localMatch.matches[i]);
+    }
+}
     }
 
     closedir(dir);
@@ -166,17 +178,7 @@ int main(int argc, char* argv[]) {
     for (int i = 0; i < rules_count; i++)
         yr_rules_destroy(rules_list[i]);
 
-    if (matchList.count > 0) {
-        for (int i = 0; i < matchList.count; ++i)
-            printf("✅ Matched rule: %s\n", matchList.matches[i]);
-
-        CallQuarantine(target_path, &matchList);
-
-        for (int i = 0; i < matchList.count; ++i)
-            free(matchList.matches[i]);
-    } else {
-        printf("[+] No threats found in: %s\n", target_path);
-    }
+    
 
     yr_finalize();
     return 0;
