@@ -47,12 +47,21 @@ void print_safe_path(const char* path) {
 
 void LoadExceptions() {
     FILE* f = fopen("exceptions.txt", "r");
-    if (!f) return;
+    if (!f) {
+        printf("[!] exceptions.txt not found, no exclusions loaded.\n");
+        fflush(stdout);
+        return;
+    }
     while (exCount < 50 && fgets(exceptions[exCount], PATH_MAX, f)) {
         exceptions[exCount][strcspn(exceptions[exCount], "\n")] = 0;
         exCount++;
     }
     fclose(f);
+    if (exCount > 0)
+        printf("[+] Loaded %d exception(s) from exceptions.txt\n", exCount);
+    else
+        printf("[+] exceptions.txt is empty, no exclusions loaded.\n");
+    fflush(stdout);
 }
 
 void add_to_map(int wd, const char* path) {
