@@ -1,4 +1,4 @@
-//Engine code//
+//Engine code directory doesnt work//
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
