@@ -18,7 +18,7 @@ typedef struct {
     char* matches[MAX_MATCHES];
     int count;
 } MatchList;
-
+void CallQuarantine(const char* filePath, MatchList* matchList);
 // Resolved real path of rules dir — set once in main, used as guard
 static char g_rules_realpath[PATH_MAX] = {0};
 
