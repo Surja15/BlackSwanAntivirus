@@ -571,3 +571,25 @@ int main(int argc, char* argv[]) {
     yr_finalize();
     return 0;
 }
+
+
+
+
+void LoadExceptions() {
+    FILE* f = fopen("exceptions.txt", "r");
+    if (!f) {
+        printf("[!] exceptions.txt not found, no exclusions loaded.\n");
+        fflush(stdout);
+        return;
+    }
+    while (exCount < 50 && fgets(exceptions[exCount], PATH_MAX, f)) {
+        exceptions[exCount][strcspn(exceptions[exCount], "\n")] = 0;
+        exCount++;
+    }
+    fclose(f);
+    if (exCount > 0)
+        printf("[+] Loaded %d exception(s) from exceptions.txt\n", exCount);
+    else
+        printf("[+] exceptions.txt is empty, no exclusions loaded.\n");
+    fflush(stdout);
+}
