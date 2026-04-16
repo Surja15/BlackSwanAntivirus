@@ -48,7 +48,7 @@ void scanDirectoryRecursively(const char* dirPath,
                               YR_RULES** rules_list,
                               int rules_count,
                               MatchList* matchList)
-{
+{ // Jai Shree Ram
     DIR* dir = opendir(dirPath);
     if (!dir) return;
 
@@ -56,8 +56,8 @@ void scanDirectoryRecursively(const char* dirPath,
 
     while ((entry = readdir(dir)) != NULL) {
 
-        if (strcmp(entry->d_name, ".") == 0 ||
-            strcmp(entry->d_name, "..") == 0)
+        if (strcmp(entry->d_name, ".") == 0 || //skips self
+            strcmp(entry->d_name, "..") == 0) //skips parent - removing this is chaos
             continue;
 
         char fullPath[PATH_MAX];
@@ -67,7 +67,7 @@ void scanDirectoryRecursively(const char* dirPath,
         if (lstat(fullPath, &st) != 0)
             continue;
 
-        if (S_ISLNK(st.st_mode))
+        if (S_ISLNK(st.st_mode)) //skips symlinks aka symbolic links. these can sometimes contain parent folder path. very danger
             continue;
 
         if (S_ISDIR(st.st_mode)) {
