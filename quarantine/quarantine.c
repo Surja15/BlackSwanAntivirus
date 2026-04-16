@@ -67,7 +67,7 @@ static void xor_keystream_crypt(unsigned char* data, size_t len,
         data[i] ^= (unsigned char)keystream_prng(key, nonce, (unsigned long)i);
 }
 
-// ─── Quarantine Dir ────────────────────────────────────────────────────────
+// Quarantine Dir
 static int ensure_quarantine_dir() {
     struct stat st;
     if (stat(QUARANTINE_DIR, &st) == 0 && S_ISDIR(st.st_mode))
@@ -83,7 +83,7 @@ static void lock_log_file() {
     (void)0;  // use: sudo chattr +a ~/quarantine/quarantine_log.txt
 }
 
-// ─── Timestamps ────────────────────────────────────────────────────────────
+// Timestamps for log file. 
 static void get_timestamp(char* buf, size_t len) {
     time_t now = time(NULL);
     struct tm* t = localtime(&now);
@@ -96,7 +96,7 @@ static void get_file_timestamp(char* buf, size_t len) {
     strftime(buf, len, "%Y%m%d_%H%M%S", t);
 }
 
-// ─── Quarantine ────────────────────────────────────────────────────────────
+// Quarntine body
 int quarantine_file(const char* file_path, const char* matched_rules) {
     if (ensure_quarantine_dir() != 0) return -1;
 
@@ -122,7 +122,7 @@ int quarantine_file(const char* file_path, const char* matched_rules) {
     get_timestamp(ts_readable, sizeof(ts_readable));
     get_file_timestamp(ts_filename, sizeof(ts_filename));
 
-    // Split into PARTS and write
+    // Split into PARTS and write - for dealing with viruses which target quarantine folder
     long chunk = file_size / PARTS;
     char part_names[PARTS][256];
 
@@ -171,7 +171,7 @@ int quarantine_file(const char* file_path, const char* matched_rules) {
     return 0;
 }
 
-// ─── Restore Now handled separately, the following is now redundant, also doesnt work lmao
+// ─── Restore Now handled separately, the following is now redundant, also doesnt work lmao- dont need to remove. If the rest of the code works. dont touch it. 
 /*int restore_file(const char* filename) {
     char password[64];
     printf("Enter master key to restore: ");
@@ -268,7 +268,7 @@ int quarantine_file(const char* file_path, const char* matched_rules) {
     return 0;
 }*/
 
-// ─── CLI entry point ────────────────────────────────────────────────────────
+// CLI entry point  remove korbi before adding to engine
 int main(int argc, char* argv[]) {
     if (argc < 3) {
         printf("Usage: %s <quarantine> <file>\n", argv[0]);
