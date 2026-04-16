@@ -85,7 +85,7 @@ if(strstr(resolvedPath, "/myrule") != NULL) continue; // so it doesnt eat up the
             scanFile(fullPath, rules_list, rules_count, &localMatch);
 
             if (localMatch.count > 0) {
-                printf("❌ Infected: %s\n", fullPath);
+                printf(" Infected: %s\n", fullPath);
                 CallQuarantine(fullPath, &localMatch);
                 for (int i = 0; i < localMatch.count; i++)
                     free(localMatch.matches[i]);
