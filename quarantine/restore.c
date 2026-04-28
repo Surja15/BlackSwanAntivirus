@@ -1,5 +1,5 @@
-// restore.c
-// Standalone restore tool for Black Swan AV quarantine
+// restore.c FINAL S15
+// Standalone restore tool for Black Swan AV quarantine - FINAL S15
 
 #include <stdio.h>
 #include <stdlib.h>
