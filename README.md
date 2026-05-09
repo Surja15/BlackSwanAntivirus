@@ -1,201 +1,633 @@
 # 🦢 BLACK SWAN AV
-### Real-Time Malware Detection, Quarantine, and Recovery System for Linux
+## Real-Time Malware Detection, Quarantine, and Recovery System for Linux
 
-Black Swan AV is a custom-built antivirus engine written entirely in C for Linux systems.  
-It combines static malware detection using YARA signatures with real-time filesystem monitoring, encrypted quarantine isolation, and secure restoration mechanisms.
+Black Swan AV is a fully custom-built antivirus system for Linux written entirely in C.  
+The project combines:
 
-The project is designed to demonstrate how modern antivirus components work internally — from detection pipelines to encrypted containment and recovery.
+- Signature-based malware detection using YARA
+- Real-time filesystem monitoring using `inotify`
+- Recursive directory scanning using DFS traversal
+- Encrypted quarantine isolation
+- Secure file restoration and recovery
 
----
-
-# 📌 Features
-
-- 🔍 Signature-based malware detection using YARA
-- ⚡ Real-Time Monitoring (RTM) using Linux `inotify`
-- 🧪 Recursive directory scanning with DFS traversal
-- 🔐 Secure encrypted quarantine system
-- ♻️ File restoration and recovery engine
-- 🧾 Quarantine logging and metadata tracking
-- 🐧 Lightweight Linux-native architecture
-- 🧱 Modular C-based design
+The antivirus is designed to simulate core architectural components of modern endpoint protection systems while remaining lightweight, modular, and transparent.
 
 ---
 
-# 🏗️ Architecture
+# 📌 Core Features
 
-```text
-                +-------------------+
-                |   RTM (rtm.c)     |
-                | inotify watcher   |
-                +---------+---------+
-                          |
-                          v
-                +-------------------+
-                |   ENGINE (engine.c)|
-                | YARA Scan Engine  |
-                +---------+---------+
-                          |
-            Malware Found |
-                          v
-                +-------------------+
-                | QUARANTINE        |
-                | quarantine.c      |
-                +---------+---------+
-                          |
-                          v
-                +-------------------+
-                | RESTORE           |
-                | restore.c         |
-                +-------------------+
-📂 Project Structure
+- 🔍 YARA-based malware signature detection
+- ⚡ Real-Time Monitoring (RTM)
+- 🧠 Multi-threaded scan execution
+- 🔐 Encrypted quarantine vault
+- ♻️ Secure restoration mechanism
+- 🧾 Quarantine logging system
+- 🐧 Linux-native implementation
+- 🧱 Modular architecture in pure C
+- 🚫 Symbolic-link traversal protection
+- 🛡️ Directory boundary enforcement
+- 📂 Recursive DFS scanning
+- 🚨 Automatic threat isolation
+
+---
+
+# 🏗️ System Architecture
+
+```text id="2u7gl6"
+                    ┌────────────────────┐
+                    │    RTM (rtm.c)    │
+                    │  inotify monitor  │
+                    └─────────┬──────────┘
+                              │
+                              ▼
+                    ┌────────────────────┐
+                    │  ENGINE (engine.c) │
+                    │   YARA Scanner     │
+                    └─────────┬──────────┘
+                              │
+                    Malware Match Found
+                              │
+                              ▼
+                    ┌────────────────────┐
+                    │ QUARANTINE SYSTEM  │
+                    │  quarantine.c      │
+                    └─────────┬──────────┘
+                              │
+                              ▼
+                    ┌────────────────────┐
+                    │ RESTORE MODULE     │
+                    │   restore.c        │
+                    └────────────────────┘
+```
+
+---
+
+# 📂 Project Structure
+
+```text id="t4tv9f"
 BLACK-SWAN-AV/
 │
-├── engine.c           # Core scanning engine
-├── rtm.c              # Real-time monitor
-├── quarantine.c       # Encrypted quarantine module
-├── restore.c          # File restoration module
+├── engine.c
+├── quarantine.c
+├── restore.c
+├── rtm.c
 │
-├── rules/
-│   ├── malware.yar    # YARA rules
-│   └── ...
+├── myrule/
+│   └── compiled/
+│       ├── trojan.yarac
+│       ├── ransomware.yarac
+│       └── ...
 │
 ├── quarantine/
-│   ├── vault/         # Encrypted isolated files
-│   └── quarantine.log
+│   ├── quarantine_log.txt
+│   ├── 20260509_001212_a
+│   └── 20260509_001212_b
 │
-├── samples/           # Test malware samples
-│
-├── Makefile
+├── exceptions.txt
 └── README.md
-🔍 Detection Engine (engine.c)
+```
 
-The engine is the detection brain of Black Swan AV.
+---
+
+# 🔍 Detection Engine (`engine.c`)
+
+The engine is the malware scanning core of Black Swan AV.
 
 It:
+- Loads compiled `.yarac` rules dynamically
+- Scans files and directories recursively
+- Uses YARA callback-based rule matching
+- Triggers quarantine automatically on detection
 
-Loads compiled YARA rules
-Recursively scans files/directories
-Matches malware signatures
-Triggers quarantine when a threat is detected
-Key Concepts
-✅ YARA Rule Matching
+---
 
-YARA acts like a malware fingerprinting engine.
+## ✅ YARA Rule Loading
 
-Example:
+The engine loads all compiled rules from:
 
-rule Trojan_Test
-{
-    strings:
-        $a = "malicious_code"
+```text id="oqjsg7"
+/myrule/compiled/
+```
 
-    condition:
-        $a
-}
+Each rule file is loaded using:
 
-If a scanned file contains the matching signature, the engine flags it as malicious.
+```c id="cc4jgf"
+yr_rules_load(rule_file, &rules_list[rules_count])
+```
 
-✅ DFS-Based Recursive Scanning
+This allows modular signature expansion without modifying engine logic.
 
-The engine uses Depth-First Search (DFS) traversal to recursively scan nested directories.
+---
 
-Example:
+## ✅ Recursive DFS Directory Traversal
 
-/home/user/
-├── folder1/
-│   └── infected.exe
-└── folder2/
+The scanner performs recursive traversal using a Depth-First Search (DFS) strategy.
 
-DFS ensures every subdirectory is explored before returning.
+### Example
 
-⚡ Real-Time Monitor (rtm.c)
+```text id="1ggm4n"
+/downloads
+├── folder1
+│   ├── file.exe
+│   └── nested/
+│       └── malware.bin
+└── folder2
+```
 
-The RTM module continuously watches directories using Linux inotify.
+DFS ensures:
+- deep directory coverage
+- systematic traversal
+- low memory overhead
 
-Whenever a file is:
+---
 
-created
-modified
-moved
+## ✅ Symbolic Link Protection
 
-the RTM automatically triggers the scanning engine.
+The engine explicitly ignores symbolic links:
 
-Flow
+```c id="0jefrd"
+if (S_ISLNK(st.st_mode))
+    continue;
+```
+
+This prevents:
+- recursive loop attacks
+- path escape attempts
+- traversal outside scan boundaries
+
+---
+
+## ✅ Boundary Enforcement
+
+The scanner resolves absolute paths using:
+
+```c id="9g8wmp"
+realpath()
+```
+
+and prevents traversal outside the original target directory.
+
+This protects against:
+- symlink redirection
+- filesystem escape attacks
+- unintended recursive scans
+
+---
+
+## ✅ YARA Callback Matching
+
+The engine uses:
+
+```c id="bq3mh4"
+CALLBACK_MSG_RULE_MATCHING
+```
+
+to capture malware rule matches dynamically.
+
+Matched rule identifiers are stored in:
+
+```c id="d1y77o"
+MatchList
+```
+
+and forwarded to quarantine.
+
+---
+
+# ⚡ Real-Time Monitor (`rtm.c`)
+
+The RTM module provides continuous filesystem protection using Linux `inotify`.
+
+It monitors:
+- file creation
+- file movement
+- file write completion
+
+---
+
+# 🔄 RTM Workflow
+
+```text id="jqb6x0"
 Filesystem Event
        ↓
-RTM receives event
+inotify captures event
        ↓
-Path reconstructed
+RTM reconstructs full path
+       ↓
+Thread created
        ↓
 engine.c executed
        ↓
-Threat scanned instantly
+Threat detected
+       ↓
+Automatic quarantine
+```
 
-This creates real-time protection behavior similar to modern antivirus software.
+---
 
-🔐 Quarantine System (quarantine.c)
+## ✅ Multi-Threaded Scan Execution
 
-The quarantine module securely isolates infected files instead of deleting them immediately.
+RTM uses:
+- POSIX threads (`pthread`)
+- semaphores (`sem_t`)
+- detached worker threads
 
-Process
-Original file is read
-File data is encrypted
-Encrypted file moved to quarantine vault
-Metadata logged
-Original file removed
-Encryption Design
+to allow concurrent scans.
 
-The quarantine system uses:
+Maximum simultaneous scan threads:
 
-XOR byte transformation
-nonce values
-counters
-keystream generation
+```c id="9jlwmj"
+#define MAX_THREADS 5
+```
 
-Each byte is transformed uniquely using:
+---
 
+## ✅ Engine Invocation
+
+RTM launches the detection engine using:
+
+```c id="w6r8jz"
+execl("/home/surja/Downloads/Black-Swan-main/engine", ...)
+```
+
+Each suspicious file is scanned independently.
+
+---
+
+## ✅ Watch Descriptor Mapping
+
+The RTM maintains an internal mapping:
+
+```c id="55lk4g"
+WatchMap watch_list[MAX_WATCHES]
+```
+
+This reconstructs filesystem paths from raw inotify watch descriptors.
+
+---
+
+## ✅ Recursive Watch Addition
+
+New directories created during runtime are automatically added to monitoring.
+
+This enables:
+- dynamic directory coverage
+- persistent recursive monitoring
+
+---
+
+## ✅ Exception Handling
+
+RTM supports exclusion rules using:
+
+```text id="92xgpf"
+exceptions.txt
+```
+
+Excluded paths are skipped automatically.
+
+---
+
+# 🔐 Quarantine System (`quarantine.c`)
+
+The quarantine module isolates infected files securely instead of deleting them immediately.
+
+---
+
+# 🔒 Encryption Design
+
+The quarantine system uses a custom XOR-keystream encryption model inspired by ChaCha20-style stream cipher concepts.
+
+The design combines:
+- master key
+- nonce
+- counter
+- keystream generation
+
+---
+
+## ✅ Keystream Generator
+
+The keystream is generated using:
+
+```c id="nxbmav"
+keystream_prng()
+```
+
+Internal state is mixed using:
+- master key bytes
+- nonce values
+- byte position counters
+- xorshift-style avalanche mixing
+
+---
+
+## ✅ Encryption Formula
+
+Each file byte is transformed independently:
+
+```text id="b7fgpc"
 encrypted_byte =
 original_byte XOR keystream_byte
+```
 
-This prevents direct recovery without restoration logic.
+Since XOR is symmetric:
 
-Quarantine Metadata
+```text id="d7tq1v"
+cipher XOR keystream = original
+```
 
-Example log entry:
+the same operation decrypts the file during restoration.
 
-[2026-05-09]
-Original: /home/user/test.exe
-Stored: quarantine/vault/ab12.qnt
-Nonce: 92831
-Status: QUARANTINED
-♻️ Restore System (restore.c)
+---
 
-The restore module decrypts quarantined files and reconstructs them safely.
+## ✅ Nonce-Based Isolation
 
-Restore Steps
-Read quarantine metadata
-Regenerate keystream
-Reverse XOR transformation
-Restore original file bytes
-Recreate original file path
-Why Keystream Regeneration Matters
+A random 7-digit nonce is generated for every quarantined file:
 
-Restoration requires the same:
+```c id="bqf2lc"
+1000000 → 9999999
+```
 
-master key
-nonce
-counter sequence
+This ensures:
+- unique keystreams
+- prevention of keystream reuse
+- different encryption output even for identical files
 
-Without identical keystream regeneration, original bytes cannot be reconstructed correctly.
+---
 
-🧪 Compilation
-Install Dependencies
-Ubuntu / Debian
+## ✅ Counter-Based Byte Transformation
+
+Each byte position acts as a counter input:
+
+```text id="e7i5fy"
+counter = file byte offset
+```
+
+Meaning:
+- byte 0 uses counter 0
+- byte 700 uses counter 700
+- every byte gets a unique keystream byte
+
+---
+
+# 🧩 File Splitting Mechanism
+
+After encryption, the quarantined file is divided into multiple parts:
+
+```c id="s4t8u0"
+#define PARTS 2
+```
+
+Example:
+
+```text id="7ahxlo"
+20260509_101010_a
+20260509_101010_b
+```
+
+This is designed to:
+- reduce single-file exposure
+- complicate malware targeting
+- isolate encrypted fragments
+
+---
+
+# 🧾 Quarantine Logging
+
+All quarantine operations are logged in:
+
+```text id="5twf6w"
+quarantine_log.txt
+```
+
+Example entry:
+
+```text id="kqvbqe"
+[2026-05-09 14:30:22]
+test.exe|20260509_143022|
+20260509_143022_a,20260509_143022_b|
+TrojanRule|4821934
+```
+
+The log stores:
+- original filename
+- quarantine timestamp
+- quarantine fragments
+- matched malware rules
+- nonce value
+
+---
+
+# ♻️ Restore System (`restore.c`)
+
+The restore module reconstructs quarantined files securely.
+
+---
+
+# 🔄 Restoration Workflow
+
+```text id="5w8x4y"
+User Authentication
+        ↓
+Log Lookup
+        ↓
+Locate File Fragments
+        ↓
+Recombine Parts
+        ↓
+Regenerate Keystream
+        ↓
+Decrypt File
+        ↓
+Restore Original File
+```
+
+---
+
+## ✅ Authentication
+
+The restore tool requires:
+- master key verification
+
+before restoration is allowed.
+
+---
+
+## ✅ Keystream Regeneration
+
+The restore process regenerates the identical keystream using:
+- master key
+- nonce
+- byte counter sequence
+
+Without identical regeneration, decryption fails.
+
+---
+
+## ✅ GUI + Console Support
+
+Restore supports:
+- Zenity GUI dialogs
+- console fallback mode
+
+depending on Linux environment availability.
+
+---
+
+## ✅ Restoration Audit Logging
+
+Successful restores append:
+
+```text id="6n2a7o"
+|RESTORED|timestamp
+```
+
+to quarantine log entries.
+
+This creates a restoration audit trail.
+
+---
+
+# 🧪 Compilation
+
+## Install Dependencies
+
+### Ubuntu / Debian
+
+```bash id="g3v6q2"
 sudo apt update
-sudo apt install yara libyara-dev build-essential
-Compile Engine
+sudo apt install yara libyara-dev build-essential zenity
+```
+
+---
+
+## Compile Engine
+
+```bash id="7m4krd"
 gcc engine.c quarantine.c -o engine -lyara
-Compile RTM
-gcc rtm.c -o rtm
-Compile Restore
+```
+
+---
+
+## Compile RTM
+
+```bash id="1slw1v"
+gcc rtm.c -o rtm -lpthread
+```
+
+---
+
+## Compile Restore Tool
+
+```bash id="xfj0ht"
 gcc restore.c -o restore
+```
+
+---
+
+# 🚀 Usage
+
+## Scan Single File
+
+```bash id="aqw1ob"
+./engine suspicious.exe
+```
+
+---
+
+## Scan Directory
+
+```bash id="r0m5f7"
+./engine /home/user/downloads
+```
+
+---
+
+## Start Real-Time Monitoring
+
+```bash id="h3xwjj"
+./rtm /home/user/downloads
+```
+
+---
+
+## Restore Quarantined File
+
+```bash id="o5g2p9"
+./restore test.exe
+```
+
+---
+
+# 🧠 Technologies Used
+
+| Technology | Purpose |
+|---|---|
+| C | Core implementation |
+| YARA | Malware signature detection |
+| inotify | Real-time monitoring |
+| POSIX Threads | Concurrent scanning |
+| XOR Stream Encryption | Quarantine isolation |
+| DFS Traversal | Recursive scanning |
+| Zenity | GUI restore interface |
+
+---
+
+# 🔒 Security Design Notes
+
+- Recursive scan boundary enforcement prevents escape traversal
+- Symbolic links are ignored for safety
+- Real-time monitoring reacts instantly to filesystem changes
+- Quarantined files are encrypted before storage
+- File splitting reduces direct exposure risk
+- Restore operations require authentication
+- Restoration activity is logged
+
+---
+
+# 📈 Future Improvements
+
+- Heuristic malware detection
+- Behavioral analysis engine
+- Full ChaCha20 implementation
+- Hash reputation system
+- Signature auto-updates
+- Multi-engine scanning
+- Sandbox execution
+- Kernel-level hooks
+- Centralized dashboard
+
+---
+
+# 📚 Educational Purpose
+
+Black Swan AV was developed as an educational and research-oriented cybersecurity project focused on understanding:
+
+- antivirus engine design
+- malware signature analysis
+- filesystem event monitoring
+- stream cipher concepts
+- secure quarantine systems
+- restoration pipelines
+- Linux security architecture
+
+---
+
+# 👨‍💻 Author
+
+**Surja Sekhar Sengupta**  
+Linux Malware Detection & Response Project
+
+---
+
+# 📜 License
+
+This project is intended strictly for:
+- academic
+- educational
+- cybersecurity research
+
+purposes only.
+
+Use responsibly.
