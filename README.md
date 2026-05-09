@@ -1,7 +1,7 @@
-# 🦢 BLACK SWAN AV
+#  BLACK SWAN Antivirus
 ## Real-Time Malware Detection, Quarantine, and Recovery System for Linux
 
-Black Swan AV is a fully custom-built antivirus system for Linux written entirely in C.  
+Black Swan AV is a fully custom-built antivirus system for Linux written entirely in C with a Python GUI.  
 The project combines:
 
 - Signature-based malware detection using YARA
