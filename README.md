@@ -1,115 +1,201 @@
->> ANALYSIS <<
+# 🦢 BLACK SWAN AV
+### Real-Time Malware Detection, Quarantine, and Recovery System for Linux
 
-    Purpose: Section header — indicates the start of the core analysis results.
+Black Swan AV is a custom-built antivirus engine written entirely in C for Linux systems.  
+It combines static malware detection using YARA signatures with real-time filesystem monitoring, encrypted quarantine isolation, and secure restoration mechanisms.
 
-    Relevance: Helps visually separate the analysis report for readability.
+The project is designed to demonstrate how modern antivirus components work internally — from detection pipelines to encrypted containment and recovery.
 
---Entropy calculated using Shannon's Information Entropy formula--
+---
 
-    What it means: The entropy values reported are calculated using Shannon's entropy, a formula from information theory.
+# 📌 Features
 
-    How it's calculated:
+- 🔍 Signature-based malware detection using YARA
+- ⚡ Real-Time Monitoring (RTM) using Linux `inotify`
+- 🧪 Recursive directory scanning with DFS traversal
+- 🔐 Secure encrypted quarantine system
+- ♻️ File restoration and recovery engine
+- 🧾 Quarantine logging and metadata tracking
+- 🐧 Lightweight Linux-native architecture
+- 🧱 Modular C-based design
 
-        Counts frequency of each byte (0–255) in the file or section.
+---
 
-        For each byte, calculates probability pipi​.
+# 🏗️ Architecture
 
-        Entropy H=−∑pilog⁡2(pi)H=−∑pi​log2​(pi​) — sum of all bytes’ contributions.
+```text
+                +-------------------+
+                |   RTM (rtm.c)     |
+                | inotify watcher   |
+                +---------+---------+
+                          |
+                          v
+                +-------------------+
+                |   ENGINE (engine.c)|
+                | YARA Scan Engine  |
+                +---------+---------+
+                          |
+            Malware Found |
+                          v
+                +-------------------+
+                | QUARANTINE        |
+                | quarantine.c      |
+                +---------+---------+
+                          |
+                          v
+                +-------------------+
+                | RESTORE           |
+                | restore.c         |
+                +-------------------+
+📂 Project Structure
+BLACK-SWAN-AV/
+│
+├── engine.c           # Core scanning engine
+├── rtm.c              # Real-time monitor
+├── quarantine.c       # Encrypted quarantine module
+├── restore.c          # File restoration module
+│
+├── rules/
+│   ├── malware.yar    # YARA rules
+│   └── ...
+│
+├── quarantine/
+│   ├── vault/         # Encrypted isolated files
+│   └── quarantine.log
+│
+├── samples/           # Test malware samples
+│
+├── Makefile
+└── README.md
+🔍 Detection Engine (engine.c)
 
-    Why relevant: Indicates randomness/unpredictability in the data — helps detect compressed/encrypted or obfuscated content.
+The engine is the detection brain of Black Swan AV.
 
-Entropy (Shannon): 6.34
+It:
 
-    What it means: The overall entropy of the entire file's raw bytes is 6.34 on a scale of 0 to 8 bits per byte.
+Loads compiled YARA rules
+Recursively scans files/directories
+Matches malware signatures
+Triggers quarantine when a threat is detected
+Key Concepts
+✅ YARA Rule Matching
 
-    Interpretation:
+YARA acts like a malware fingerprinting engine.
 
-        0 means completely uniform (all bytes the same).
+Example:
 
-        8 means maximum randomness (each byte equally likely).
+rule Trojan_Test
+{
+    strings:
+        $a = "malicious_code"
 
-        6.34 is moderately high — suspiciously random, possibly packed or encrypted.
+    condition:
+        $a
+}
 
-    Why relevant: Malware often compresses/encrypts itself to evade static detection, increasing entropy.
+If a scanned file contains the matching signature, the engine flags it as malicious.
 
-Number of Sections: 4
+✅ DFS-Based Recursive Scanning
 
-    What it means: The PE file contains 4 distinct sections (like .text, .data, .rdata, etc.).
+The engine uses Depth-First Search (DFS) traversal to recursively scan nested directories.
 
-    Why relevant: Section count is basic metadata; unusual numbers may indicate packing or tampering.
+Example:
 
-Suspicious Sections:
+/home/user/
+├── folder1/
+│   └── infected.exe
+└── folder2/
 
-    What it means: Sections flagged because their entropy is high (>6.8), which could indicate packed or encrypted data.
+DFS ensures every subdirectory is explored before returning.
 
-    Why relevant: Packed or encrypted sections often hide malicious code.
+⚡ Real-Time Monitor (rtm.c)
 
-- .text: Entropy=7.04
+The RTM module continuously watches directories using Linux inotify.
 
-    What it means: The .text section (usually contains executable code) has entropy 7.04, which is quite high.
+Whenever a file is:
 
-    Interpretation:
+created
+modified
+moved
 
-        This is unusual — .text is expected to have code with moderate entropy.
+the RTM automatically triggers the scanning engine.
 
-        High entropy here can mean the code is packed or encrypted — a red flag.
+Flow
+Filesystem Event
+       ↓
+RTM receives event
+       ↓
+Path reconstructed
+       ↓
+engine.c executed
+       ↓
+Threat scanned instantly
 
-    Why relevant: Points to potentially obfuscated or malicious code.
+This creates real-time protection behavior similar to modern antivirus software.
 
-Flagged Suspicious APIs: ['LoadLibraryA', 'GetProcAddress']
+🔐 Quarantine System (quarantine.c)
 
-    What it means: The file imports these Windows API functions known for dynamic loading or code injection.
+The quarantine module securely isolates infected files instead of deleting them immediately.
 
-    Why relevant:
+Process
+Original file is read
+File data is encrypted
+Encrypted file moved to quarantine vault
+Metadata logged
+Original file removed
+Encryption Design
 
-        LoadLibraryA loads DLLs at runtime, often abused by malware to inject code.
+The quarantine system uses:
 
-        GetProcAddress retrieves function addresses dynamically, common in obfuscated calls.
+XOR byte transformation
+nonce values
+counters
+keystream generation
 
-        Their presence increases suspicion about the file’s behavior.
+Each byte is transformed uniquely using:
 
-Risk Score (0-100): 25
+encrypted_byte =
+original_byte XOR keystream_byte
 
-    What it means: A heuristic score summarizing risk, scaled from 0 (low risk) to 100 (high risk).
+This prevents direct recovery without restoration logic.
 
-    How calculated:
+Quarantine Metadata
 
-        Starts at 0, adds points for:
+Example log entry:
 
-            Overall entropy > 6.5 → +20 points
+[2026-05-09]
+Original: /home/user/test.exe
+Stored: quarantine/vault/ab12.qnt
+Nonce: 92831
+Status: QUARANTINED
+♻️ Restore System (restore.c)
 
-            Each suspicious section → +5 points
+The restore module decrypts quarantined files and reconstructs them safely.
 
-            Each flagged API → +10 points
+Restore Steps
+Read quarantine metadata
+Regenerate keystream
+Reverse XOR transformation
+Restore original file bytes
+Recreate original file path
+Why Keystream Regeneration Matters
 
-        In this case:
+Restoration requires the same:
 
-            Entropy (6.34) → close but <6.5 → no points
+master key
+nonce
+counter sequence
 
-            1 suspicious section → +5
+Without identical keystream regeneration, original bytes cannot be reconstructed correctly.
 
-            2 flagged APIs → +20
-
-            Total = 25
-
-    Why relevant: Helps prioritize files for deeper inspection or automated blocking.
-
-Summary
-Line	Meaning	Importance
-Entropy (Shannon): 6.34	Raw byte randomness measured	Detects packing/encryption
-Number of Sections: 4	Number of PE file sections	Basic structural info
-Suspicious Sections:	Sections with unusually high entropy	Potentially obfuscated code
-.text: Entropy=7.04	High entropy in executable code section	Strong sign of packing or encryption
-Flagged Suspicious APIs	Imports of risky system calls	Indicates possible malicious behavior
-Risk Score (0-100): 25	Heuristic combined risk score	Overall threat likelihood
-
-
-
-
-# exclusions.txt
-/home/user/.cache
-/home/user/Downloads
-/proc
-/sys
-/tmp
-
+🧪 Compilation
+Install Dependencies
+Ubuntu / Debian
+sudo apt update
+sudo apt install yara libyara-dev build-essential
+Compile Engine
+gcc engine.c quarantine.c -o engine -lyara
+Compile RTM
+gcc rtm.c -o rtm
+Compile Restore
+gcc restore.c -o restore
